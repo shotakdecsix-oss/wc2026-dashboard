@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FIFA ワールドカップ 2026</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --bg:#0a0e1a;--bg2:#111827;--card:#1a2236;--card2:#1e2942;--gold:#f5b912;--blue:#3b82f6;--green:#22c55e;--red:#ef4444;--japan:#bc002d;--text:#f0f4ff;--muted:#94a3b8;--border:#2a3655; }
+    body { font-family:'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh; }
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse-border{0%,100%{border-color:rgba(239,68,68,.6)}50%{border-color:rgba(239,68,68,.2)}}
+
+    /* HEADER */
+    header { background:linear-gradient(135deg,#0a0e1a,#1a2236,#0d1428);border-bottom:2px solid var(--gold);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px; }
+    .header-left { display:flex;align-items:center;gap:14px; }
+    .wc-badge { width:46px;height:46px;background:linear-gradient(135deg,var(--gold),#d4920a);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px; }
+    .header-title h1 { font-size:1.2rem;font-weight:800;background:linear-gradient(90deg,var(--gold),#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+    .header-title p { font-size:.7rem;color:var(--muted);margin-top:2px; }
+    .header-right { display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
+    .live-badge { display:flex;align-items:center;gap:5px;background:rgba(239,68,68,.15);border:1px solid var(--red);border-radius:20px;padding:4px 10px;font-size:.7rem;font-weight:700;color:var(--red); }
+    .live-dot { width:7px;height:7px;border-radius:50%;background:var(--red);animation:pulse 1.5s infinite; }
+    .last-updated { font-size:.68rem;color:var(--muted); }
+    .refresh-btn { background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.35);color:var(--blue);border-radius:8px;padding:5px 12px;font-size:.72rem;font-weight:700;cursor:pointer; }
+
+    /* API BAR */
+    .api-bar { background:#0d1525;border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
+    .api-bar label { font-size:.73rem;color:var(--muted);white-space:nowrap; }
+    .api-input { flex:1;min-width:190px;max-width:280px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text);font-size:.73rem;font-family:monospace;outline:none; }
+    .api-save { background:var(--blue);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:.73rem;font-weight:700;cursor:pointer;white-space:nowrap; }
+    .api-clear { background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:5px 9px;font-size:.71rem;cursor:pointer;white-space:nowrap; }
+    .api-status { font-size:.68rem;padding:3px 8px;border-radius:10px; }
+    .api-status.ok { background:rgba(34,197,94,.1);color:#86efac;border:1px solid rgba(34,197,94,.3); }
+    .api-status.demo { background:rgba(245,185,18,.1);color:var(--gold);border:1px solid rgba(245,185,18,.3); }
+    .api-status.error { background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.3); }
+    .auto-toggle { display:flex;align-items:center;gap:5px;font-size:.71rem;color:var(--muted);cursor:pointer; }
+    .auto-toggle input { accent-color:var(--blue); }
+
+    /* LOADING */
+    #loading-overlay { display:none;position:fixed;inset:0;z-index:999;background:rgba(10,14,26,.75);align-items:center;justify-content:center;flex-direction:column;gap:14px; }
+    #loading-overlay.show { display:flex; }
+    .spinner { width:40px;height:40px;border:4px solid rgba(245,185,18,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .75s linear infinite; }
+    .notice-banner { border-radius:8px;padding:10px 16px;font-size:.74rem;margin:6px 20px;display:none;line-height:1.7; }
+    .notice-banner.error { background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.4);color:#fca5a5; }
+    .notice-banner.success { background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.4);color:#86efac; }
+    .debug-box { background:#060c18;border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:.66rem;color:#64748b;margin:0 20px 4px;display:none;font-family:monospace;white-space:pre-wrap;max-height:80px;overflow-y:auto; }
+
+    /* TOP STRIP */
+    .top-strip { background:#0b1120;border-bottom:1px solid var(--border);padding:12px 20px; }
+    .top-strip-inner { max-width:900px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:16px; }
+    .strip-section { }
+    .strip-label { font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;display:flex;align-items:center;gap:6px; }
+    .strip-label .dot { display:inline-block;width:6px;height:6px;border-radius:50%; }
+    .strip-label.recent { color:var(--green); }
+    .strip-label.recent .dot { background:var(--green); }
+    .strip-label.upcoming { color:var(--blue); }
+    .strip-label.upcoming .dot { background:var(--blue); }
+    .strip-matches { display:flex;flex-direction:column;gap:5px; }
+    .strip-match { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px; }
+    .strip-match.jp { border-color:rgba(188,0,45,.5);background:rgba(24,10,14,.7); }
+    .strip-match.live-now { border-color:rgba(239,68,68,.6);animation:pulse-border 1.5s infinite; }
+    .strip-team { display:flex;align-items:center;gap:5px;font-size:.76rem;font-weight:700;min-width:0; }
+    .strip-team span.name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .strip-team.right { flex-direction:row-reverse; }
+    .strip-flag { font-size:.95rem;flex-shrink:0; }
+    .strip-center { text-align:center;min-width:54px; }
+    .strip-score { font-size:.95rem;font-weight:800;color:var(--gold);letter-spacing:1px; }
+    .strip-vs { font-size:.7rem;font-weight:700;color:var(--muted); }
+    .strip-dt { font-size:.65rem;font-weight:700;color:var(--blue);display:block; }
+    .strip-grp { font-size:.58rem;color:var(--muted);margin-top:1px;display:block; }
+    .strip-empty { font-size:.73rem;color:var(--muted);padding:8px 0; }
+
+    /* MAIN */
+    .main { max-width:900px;margin:0 auto;padding:16px 16px;display:flex;flex-direction:column;gap:12px; }
+    details { background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden; }
+    details[open] { border-color:var(--gold); }
+    summary { list-style:none;padding:14px 18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:.95rem;font-weight:700;user-select:none;-webkit-user-select:none; }
+    summary::-webkit-details-marker { display:none; }
+    summary .sum-left { display:flex;align-items:center;gap:10px; }
+    summary .arrow { font-size:.78rem;color:var(--muted);transition:transform .2s; }
+    details[open] summary .arrow { transform:rotate(180deg); }
+    details[open] summary { border-bottom:1px solid var(--border);color:var(--gold); }
+    .section-body { padding:18px; }
+    .card { background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px; }
+    .card-title { font-size:.92rem;font-weight:700;color:var(--gold);margin-bottom:12px; }
+    .section-note { background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:9px 13px;font-size:.73rem;color:var(--muted);margin-bottom:14px; }
+    .stat-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px; }
+    .stat-box { background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center; }
+    .stat-box .val { font-size:1.6rem;font-weight:800;color:var(--gold);display:block; }
+    .stat-box .lbl { font-size:.68rem;color:var(--muted);margin-top:2px; }
+    .links-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px; }
+    .link-card { display:flex;align-items:center;gap:9px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-decoration:none;color:var(--text); }
+    .link-card:hover { border-color:var(--blue); }
+    .link-icon { font-size:1.2rem; }
+    .link-text .lt { font-size:.82rem;font-weight:600; }
+    .link-text .ld { font-size:.68rem;color:var(--muted);margin-top:1px; }
+    .groups-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px; }
+    .group-card { background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden; }
+    .group-hd { background:#162033;padding:8px 13px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border); }
+    .group-lbl { font-size:.95rem;font-weight:800;color:var(--gold);background:rgba(245,185,18,.1);border:1px solid rgba(245,185,18,.3);border-radius:5px;padding:1px 9px; }
+    .group-table { width:100%;border-collapse:collapse; }
+    .group-table th { font-size:.62rem;color:var(--muted);text-transform:uppercase;padding:6px 7px;text-align:center;background:rgba(0,0,0,.2); }
+    .group-table th:first-child { text-align:left; }
+    .group-table td { padding:7px 7px;font-size:.78rem;text-align:center;border-top:1px solid rgba(255,255,255,.04); }
+    .group-table td:first-child { text-align:left; }
+    .team-cell { display:flex;align-items:center;gap:5px; }
+    .pts-cell { font-weight:700;color:var(--gold); }
+    .rank-1,.rank-2 { border-left:3px solid var(--green); }
+    .rank-3 { border-left:3px solid var(--blue); }
+    .legend { display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap; }
+    .legend-item { display:flex;align-items:center;gap:5px;font-size:.68rem;color:var(--muted); }
+    .legend-dot { width:8px;height:8px;border-radius:2px; }
+    .filter-row { display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px; }
+    .filter-btn { padding:4px 10px;border-radius:14px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:.72rem;font-weight:600;cursor:pointer; }
+    .filter-btn.active,.filter-btn:hover { background:var(--blue);border-color:var(--blue);color:#fff; }
+    .match-day-group { margin-bottom:20px; }
+    .match-day-hd { font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;padding:6px 0;margin-bottom:7px;border-bottom:1px solid var(--border); }
+    .match-card { background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:7px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px; }
+    .match-card.japan-match { border-color:var(--japan);background:#180a0e; }
+    .match-team { display:flex;align-items:center;gap:7px;font-size:.83rem;font-weight:700; }
+    .match-team.right { flex-direction:row-reverse; }
+    .match-team-flag { font-size:1.3rem; }
+    .match-center { text-align:center; }
+    .match-score { font-size:1.2rem;font-weight:800;color:var(--gold);letter-spacing:2px; }
+    .match-tbd { font-size:.85rem;font-weight:700;color:var(--muted); }
+    .match-venue { font-size:.62rem;color:var(--muted);opacity:.7;margin-top:1px; }
+    .group-badge { display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:var(--blue);border-radius:3px;padding:1px 5px;font-size:.6rem;font-weight:700;margin-top:2px; }
+    .japan-star { display:inline-block;background:rgba(188,0,45,.15);border:1px solid rgba(188,0,45,.4);color:#ff6b8a;border-radius:3px;padding:1px 5px;font-size:.6rem;font-weight:700;margin-top:2px;margin-left:3px; }
+    .status-pill { display:inline-flex;align-items:center;padding:1px 6px;border-radius:10px;font-size:.62rem;font-weight:700;margin-top:2px; }
+    .status-upcoming { background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.3); }
+    .status-live { background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3);animation:pulse 1.5s infinite; }
+    .status-finished { background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.3); }
+    .japan-hero { background:linear-gradient(135deg,#1a0a0e,#150a1a);border:1px solid var(--japan);border-radius:12px;padding:18px;margin-bottom:16px;text-align:center; }
+    .japan-flag-big { font-size:2.4rem;margin-bottom:5px; }
+    .japan-hero h2 { font-size:1.3rem;font-weight:800; }
+    .japan-hero .sub { color:var(--muted);font-size:.77rem;margin-top:3px; }
+    .japan-group-badge { display:inline-block;background:rgba(245,185,18,.1);border:1px solid rgba(245,185,18,.4);color:var(--gold);border-radius:6px;padding:3px 10px;font-size:.73rem;font-weight:700;margin-top:7px; }
+    .japan-matches { display:grid;gap:12px; }
+    .japan-match-card { background:#180a0e;border:1px solid rgba(188,0,45,.4);border-radius:12px;padding:16px; }
+    .matchday-label { font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#ff6b8a;margin-bottom:9px; }
+    .japan-vs-row { display:flex;align-items:center;justify-content:center;gap:16px;margin:9px 0; }
+    .japan-vs-team { display:flex;flex-direction:column;align-items:center;gap:3px;min-width:64px; }
+    .japan-vs-flag { font-size:1.9rem; }
+    .japan-vs-name { font-size:.77rem;font-weight:700;text-align:center; }
+    .vs-text { font-size:1rem;font-weight:800;color:var(--muted); }
+    .japan-match-result { font-size:1.3rem;font-weight:900;color:var(--gold);text-align:center;margin:5px 0; }
+    .japan-match-info { display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.07); }
+    .japan-match-info-item { text-align:center; }
+    .info-label { font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.4px; }
+    .info-value { font-size:.75rem;font-weight:600;margin-top:2px; }
+    .scorers-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:9px; }
+    .scorer-card { background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:11px; }
+    .scorer-rank { font-size:1.1rem;font-weight:900;color:var(--gold);min-width:26px;text-align:center; }
+    .scorer-info { flex:1; }
+    .scorer-name { font-size:.85rem;font-weight:700; }
+    .scorer-team { font-size:.7rem;color:var(--muted);margin-top:1px; }
+    .scorer-goals-num { font-size:1.4rem;font-weight:900;color:var(--gold); }
+    .scorer-goals-label { font-size:.64rem;color:var(--muted); }
+    .stats-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px; }
+    .chart-card { background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px; }
+    .chart-card canvas { max-height:250px; }
+    /* SIDEBAR NAV */
+    #sidebar-nav{position:fixed;right:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:200;}
+    .sidenav-btn{width:42px;height:42px;background:rgba(17,24,39,.92);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;transition:border-color .2s,background .2s;backdrop-filter:blur(8px);font-size:.95rem;gap:2px;}
+    .sidenav-btn:hover,.sidenav-btn.snav-active{border-color:var(--gold);background:rgba(245,185,18,.12);}
+    .sidenav-label{font-size:.44rem;color:var(--muted);line-height:1;display:none;}
+    @media(max-width:600px){
+      #sidebar-nav{right:auto;top:auto;transform:none;bottom:0;left:0;width:100%;flex-direction:row;justify-content:space-around;padding:6px 4px calc(6px + env(safe-area-inset-bottom));background:rgba(10,14,26,.97);border-top:1px solid var(--border);backdrop-filter:blur(12px);gap:0;border-radius:0;}
+      .sidenav-btn{width:48px;height:48px;border:none;background:transparent;border-radius:8px;font-size:1.1rem;}
+      .sidenav-btn:hover,.sidenav-btn.snav-active{background:rgba(245,185,18,.12);border:none;}
+      .sidenav-label{display:block;}
+      .main{padding-bottom:72px;}
+      .stat-grid{grid-template-columns:repeat(2,1fr)}
+      .match-card{grid-template-columns:1fr;text-align:center}
+      .match-team,.match-team.right{flex-direction:column;align-items:center}
+      .stats-grid,.groups-grid{grid-template-columns:1fr}
+      .api-bar{flex-direction:column;align-items:flex-start}
+      .top-strip-inner{grid-template-columns:1fr}
+      .group-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      .group-table th,.group-table td{padding:5px 4px;font-size:.62rem;white-space:nowrap;}
+    }
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<div id="loading-overlay"><div class="spinner"></div><div style="color:var(--muted);font-size:.8rem">データを取得中...</div></div>
+
+<header>
+  <div class="header-left">
+    <div class="wc-badge">🏆</div>
+    <div class="header-title">
+      <h1>FIFA ワールドカップ 2026™</h1>
+      <p>カナダ・メキシコ・アメリカ ／ 2026年6月11日〜7月19日</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge"><div class="live-dot"></div>開催中</div>
+    <div class="last-updated" id="last-updated-display">--</div>
+    <button class="refresh-btn" onclick="refreshData()">🔄 更新</button>
+  </div>
+</header>
+
+<div class="api-bar">
+  <label>📡 ソース：</label>
+  <select id="api-source" onchange="onSourceChange()" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 10px;font-size:.73rem">
+    <option value="espn">⚡ ESPN（APIキー不要）</option>
+    <option value="fdo">football-data.org</option>
+  </select>
+  <input type="password" id="api-key-input" class="api-input" placeholder="football-data.org のAPIキー" autocomplete="off" style="display:none">
+  <button id="api-save-btn" class="api-save" onclick="saveApiKey()" style="display:none">取得</button>
+  <button class="api-save" onclick="refreshData()" style="background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);color:#86efac">🔄 データ取得</button>
+  <button class="api-clear" onclick="clearApiKey()">デモに戻す</button>
+  <span class="api-status demo" id="api-status-badge">🎯 デモデータ</span>
+  <label class="auto-toggle"><input type="checkbox" id="auto-refresh-toggle" onchange="toggleAutoRefresh(this.checked)"> 自動更新（5分）</label>
+</div>
+<div class="notice-banner" id="notice-banner"></div>
+<div class="debug-box" id="debug-box"></div>
+
+<!-- TOP STRIP -->
+<div class="top-strip">
+  <div class="top-strip-inner">
+    <div class="strip-section">
+      <div class="strip-label recent"><div class="dot"></div>直近の結果</div>
+      <div class="strip-matches" id="strip-recent"></div>
+    </div>
+    <div class="strip-section">
+      <div class="strip-label upcoming"><div class="dot"></div>次の試合</div>
+      <div class="strip-matches" id="strip-upcoming"></div>
+    </div>
+  </div>
+</div>
+
+  <!-- SIDEBAR NAVIGATION -->
+  <nav id="sidebar-nav" aria-label="Section navigation">
+    <a class="sidenav-btn" href="#sec-overview" onclick="openSection('sec-overview')" title="大会概要">🌐<span class="sidenav-label">概要</span></a>
+    <a class="sidenav-btn" href="#sec-groups" onclick="openSection('sec-groups')" title="グループ順位表">📊<span class="sidenav-label">順位</span></a>
+    <a class="sidenav-btn" href="#sec-schedule" onclick="openSection('sec-schedule')" title="試合スケジュール">📅<span class="sidenav-label">日程</span></a>
+    <a class="sidenav-btn" href="#sec-japan" onclick="openSection('sec-japan')" title="日本代表">🇯🇵<span class="sidenav-label">日本</span></a>
+    <a class="sidenav-btn" href="#sec-scorers" onclick="openSection('sec-scorers')" title="得点ランキング">⚽<span class="sidenav-label">得点</span></a>
+    <a class="sidenav-btn" href="#sec-stats" onclick="openSection('sec-stats')" title="スタッツ">📈<span class="sidenav-label">統計</span></a>
+  </nav>
+
+<div class="main">
+  <details id="sec-overview" open>
+    <summary><span class="sum-left">🌐 大会概要</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <div class="stat-grid">
+        <div class="stat-box"><span class="val">48</span><span class="lbl">出場国</span></div>
+        <div class="stat-box"><span class="val">12</span><span class="lbl">グループ</span></div>
+        <div class="stat-box"><span class="val">104</span><span class="lbl">総試合数</span></div>
+        <div class="stat-box"><span class="val">16</span><span class="lbl">開催都市</span></div>
+        <div class="stat-box"><span class="val">3</span><span class="lbl">共催国</span></div>
+        <div class="stat-box"><span class="val">32</span><span class="lbl">決勝T進出</span></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">📌 大会フォーマット</div>
+        <p style="font-size:.8rem;color:var(--muted);line-height:1.7">48チームを12グループに分け、各組上位2チームと3位チームのうち上位8チームが決勝トーナメントへ進出。<br>🗓 グループステージ：6/11〜6/27 ／ ラウンド16：6/28〜7/4 ／ 🏆 決勝：7/19</p>
+      </div>
+      <div class="card" style="margin-bottom:12px;background:rgba(245,185,18,.04);border-color:rgba(245,185,18,.2)">
+        <div class="card-title">⚡ ライブデータの使い方</div>
+        <p style="font-size:.8rem;color:var(--muted);line-height:1.8">「🔄 データ取得」を押すだけでOK。ESPNが選択されているのでAPIキー不要です。</p>
+      </div>
+      <div class="links-grid">
+        <a class="link-card" href="https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/scores-fixtures" target="_blank"><span class="link-icon">⚽</span><div class="link-text"><div class="lt">FIFA 公式</div><div class="ld">公式スコア・順位表</div></div></a>
+        <a class="link-card" href="https://www.google.com/search?q=ワールドカップ2026+試合結果" target="_blank"><span class="link-icon">🔍</span><div class="link-text"><div class="lt">Google スポーツ</div><div class="ld">リアルタイムスコア</div></div></a>
+        <a class="link-card" href="https://www.sofascore.com/" target="_blank"><span class="link-icon">📱</span><div class="link-text"><div class="lt">Sofascore</div><div class="ld">詳細スタッツ・ライブ</div></div></a>
+        <a class="link-card" href="https://www.jfa.jp/samuraiblue/" target="_blank"><span class="link-icon">🇯🇵</span><div class="link-text"><div class="lt">JFA</div><div class="ld">日本代表 日程・結果</div></div></a>
+      </div>
+    </div>
+  </details>
+
+  <details id="sec-groups">
+    <summary><span class="sum-left">📊 グループ順位表</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>ラウンド16進出（1・2位）</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div>3位枠候補</div>
+      </div>
+      <div class="groups-grid" id="groups-container"></div>
+    </div>
+  </details>
+
+  <details id="sec-schedule">
+    <summary><span class="sum-left">📅 試合スケジュール（JST）</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <div class="section-note">⏰ 時刻はすべて日本標準時（JST）で表示。</div>
+      <div class="filter-row">
+        <button class="filter-btn active" onclick="filterSchedule('all',this)">すべて</button>
+        <button class="filter-btn" onclick="filterSchedule('japan',this)">🇯🇵 日本戦</button>
+        <button class="filter-btn" onclick="filterSchedule('A',this)">G-A</button>
+        <button class="filter-btn" onclick="filterSchedule('B',this)">G-B</button>
+        <button class="filter-btn" onclick="filterSchedule('C',this)">G-C</button>
+        <button class="filter-btn" onclick="filterSchedule('D',this)">G-D</button>
+        <button class="filter-btn" onclick="filterSchedule('E',this)">G-E</button>
+        <button class="filter-btn" onclick="filterSchedule('F',this)">G-F</button>
+        <button class="filter-btn" onclick="filterSchedule('G',this)">G-G</button>
+        <button class="filter-btn" onclick="filterSchedule('H',this)">G-H</button>
+        <button class="filter-btn" onclick="filterSchedule('I',this)">G-I</button>
+        <button class="filter-btn" onclick="filterSchedule('J',this)">G-J</button>
+        <button class="filter-btn" onclick="filterSchedule('K',this)">G-K</button>
+        <button class="filter-btn" onclick="filterSchedule('L',this)">G-L</button>
+      </div>
+      <div id="schedule-container"></div>
+    </div>
+  </details>
+
+  <details id="sec-japan">
+    <summary><span class="sum-left">🇯🇵 日本代表</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <div class="japan-hero">
+        <div class="japan-flag-big">🇯🇵</div>
+        <h2>SAMURAI BLUE</h2>
+        <p class="sub">FIFA ワールドカップ 2026</p>
+        <div class="japan-group-badge">グループF ／ オランダ・スウェーデン・チュニジアと同組</div>
+      </div>
+      <div class="japan-matches" id="japan-matches"></div>
+      <div style="margin-top:18px">
+        <h3 style="font-size:.92rem;font-weight:700;margin-bottom:10px">📊 グループF 順位表</h3>
+        <div class="card"><div class="group-table-wrap"><table class="group-table" style="width:100%"><thead><tr><th>#</th><th style="text-align:left">チーム</th><th>試</th><th>勝</th><th>分</th><th>負</th><th>得</th><th>失</th><th>差</th><th>点</th></tr></thead><tbody id="japan-group-table"></tbody></table></div></div>
+      </div>
+    </div>
+  </details>
+
+  <details id="sec-scorers">
+    <summary><span class="sum-left">⚽ 得点ランキング</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <div class="section-note">💡 「🔄 データ取得」を押すとランキングも更新されます。</div>
+      <div id="scorers-container"></div>
+    </div>
+  </details>
+
+  <details id="sec-stats">
+    <summary><span class="sum-left">📈 スタッツ</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <p style="font-size:.74rem;color:var(--muted);margin-bottom:16px">※ FIFAランキング・グループ組み合わせに基づくデータです。</p>
+      <div class="stats-grid">
+        <div class="chart-card"><div class="card-title">🌍 大陸別出場チーム数</div><canvas id="continentChart"></canvas></div>
+        <div class="chart-card"><div class="card-title">🏅 グループF：FIFAランキング</div><canvas id="groupFChart"></canvas></div>
+        <div class="chart-card"><div class="card-title">⚽ 優勝候補確率</div><canvas id="favoritesChart"></canvas></div>
+        <div class="chart-card"><div class="card-title">📍 開催都市別試合数</div><canvas id="venueChart"></canvas></div>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+var apiKey='',autoRefreshTimer=null,currentScheduleFilter='all',liveData=/* __WC2026_LIVE_DATA__ */ {"groups":null,"matches":[{"id":"760415","homeTeam":{"name":"メキシコ","flag":"🇲🇽"},"awayTeam":{"name":"南アフリカ","flag":"🇿🇦"},"group":"KO","date":"2026-06-12","kickoff":"04:00","venue":"Estadio Banorte","status":"FINISHED","score":{"home":2,"away":0},"isJapan":false},{"id":"760414","homeTeam":{"name":"韓国","flag":"🇰🇷"},"awayTeam":{"name":"チェコ","flag":"🇨🇿"},"group":"KO","date":"2026-06-12","kickoff":"11:00","venue":"Estadio Akron","status":"FINISHED","score":{"home":2,"away":1},"isJapan":false},{"id":"760438","homeTeam":{"name":"チェコ","flag":"🇨🇿"},"awayTeam":{"name":"南アフリカ","flag":"🇿🇦"},"group":"KO","date":"2026-06-19","kickoff":"01:00","venue":"Mercedes-Benz Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760439","homeTeam":{"name":"スイス","flag":"🇨🇭"},"awayTeam":{"name":"Bosnia-Herzegovina","flag":"🏳️"},"group":"KO","date":"2026-06-19","kickoff":"04:00","venue":"SoFi Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760440","homeTeam":{"name":"カナダ","flag":"🇨🇦"},"awayTeam":{"name":"カタール","flag":"🇶🇦"},"group":"KO","date":"2026-06-19","kickoff":"07:00","venue":"BC Place","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760441","homeTeam":{"name":"メキシコ","flag":"🇲🇽"},"awayTeam":{"name":"韓国","flag":"🇰🇷"},"group":"KO","date":"2026-06-19","kickoff":"10:00","venue":"Estadio Akron","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760473","homeTeam":{"name":"Curaçao","flag":"🏳️"},"awayTeam":{"name":"コートジボワール","flag":"🇨🇮"},"group":"KO","date":"2026-06-26","kickoff":"05:00","venue":"Lincoln Financial Field","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760468","homeTeam":{"name":"エクアドル","flag":"🇪🇨"},"awayTeam":{"name":"ドイツ","flag":"🇩🇪"},"group":"KO","date":"2026-06-26","kickoff":"05:00","venue":"MetLife Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760471","homeTeam":{"name":"日本","flag":"🇯🇵"},"awayTeam":{"name":"スウェーデン","flag":"🇸🇪"},"group":"KO","date":"2026-06-26","kickoff":"08:00","venue":"AT&T Stadium","status":"SCHEDULED","score":null,"isJapan":true},{"id":"760472","homeTeam":{"name":"チュニジア","flag":"🇹🇳"},"awayTeam":{"name":"オランダ","flag":"🇳🇱"},"group":"KO","date":"2026-06-26","kickoff":"08:00","venue":"GEHA Field at Arrowhead Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760469","homeTeam":{"name":"パラグアイ","flag":"🇵🇾"},"awayTeam":{"name":"オーストラリア","flag":"🇦🇺"},"group":"KO","date":"2026-06-26","kickoff":"11:00","venue":"Levi's Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760470","homeTeam":{"name":"トルコ","flag":"🇹🇷"},"awayTeam":{"name":"USA","flag":"🇺🇸"},"group":"KO","date":"2026-06-26","kickoff":"11:00","venue":"SoFi Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760497","homeTeam":{"name":"Group H Winner","flag":"🏳️"},"awayTeam":{"name":"Group J 2nd Place","flag":"🏳️"},"group":"KO","date":"2026-07-03","kickoff":"04:00","venue":"SoFi Stadium","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760496","homeTeam":{"name":"Group K 2nd Place","flag":"🏳️"},"awayTeam":{"name":"Group L 2nd Place","flag":"🏳️"},"group":"KO","date":"2026-07-03","kickoff":"08:00","venue":"BMO Field","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760498","homeTeam":{"name":"Group B Winner","flag":"🏳️"},"awayTeam":{"name":"Third Place Group E/F/G/I/J","flag":"🏳️"},"group":"KO","date":"2026-07-03","kickoff":"12:00","venue":"BC Place","status":"SCHEDULED","score":null,"isJapan":false},{"id":"760510","homeTeam":{"name":"Round of 16 1 Winner","flag":"🏳️"},"awayTeam":{"name":"Round of 16 2 Winner","flag":"🏳️"},"group":"KO","date":"2026-07-10","kickoff":"05:00","venue":"Gillette Stadium","status":"SCHEDULED","score":null,"isJapan":false}],"scorers":null,"updatedAt":"2026-06-12 17:00 JST","source":"ESPN"};
+
+// ==================== SIDEBAR NAV ====================
+function openSection(id){
+  var el=document.getElementById(id);
+  if(el){el.open=true;setTimeout(function(){el.scrollIntoView({behavior:'smooth',block:'start'});},50);}
+  document.querySelectorAll('.sidenav-btn').forEach(function(b){
+    b.classList.toggle('snav-active',b.getAttribute('href')==='#'+id);
+  });
+  return false;
+}
+window.addEventListener('scroll',function(){
+  var sections=['sec-overview','sec-groups','sec-schedule','sec-japan','sec-scorers','sec-stats'];
+  var mid=window.scrollY+window.innerHeight/2;
+  sections.forEach(function(id){
+    var el=document.getElementById(id);if(!el)return;
+    var top=el.getBoundingClientRect().top+window.scrollY;
+    var bot=top+el.offsetHeight;
+    document.querySelectorAll('.sidenav-btn').forEach(function(b){
+      if(b.getAttribute('href')==='#'+id)b.classList.toggle('snav-active',mid>=top&&mid<bot);
+    });
+  });
+},{ passive:true });
+
+// ==================== DEMO DATA ====================
+var DEMO_GROUPS=[
+  {id:'A',teams:[{name:'カナダ',flag:'🇨🇦',played:3,won:2,drawn:1,lost:0,gf:4,ga:2,pts:7},{name:'USA',flag:'🇺🇸',played:3,won:2,drawn:0,lost:1,gf:5,ga:3,pts:6},{name:'ウルグアイ',flag:'🇺🇾',played:3,won:1,drawn:1,lost:1,gf:3,ga:3,pts:4},{name:'パナマ',flag:'🇵🇦',played:3,won:0,drawn:0,lost:3,gf:1,ga:5,pts:0}]},
+  {id:'B',teams:[{name:'アルゼンチン',flag:'🇦🇷',played:3,won:3,drawn:0,lost:0,gf:8,ga:2,pts:9},{name:'チリ',flag:'🇨🇱',played:3,won:1,drawn:1,lost:1,gf:3,ga:4,pts:4},{name:'クロアチア',flag:'🇭🇷',played:3,won:1,drawn:0,lost:2,gf:3,ga:5,pts:3},{name:'ペルー',flag:'🇵🇪',played:3,won:0,drawn:1,lost:2,gf:2,ga:5,pts:1}]},
+  {id:'C',teams:[{name:'フランス',flag:'🇫🇷',played:2,won:2,drawn:0,lost:0,gf:5,ga:1,pts:6},{name:'メキシコ',flag:'🇲🇽',played:2,won:1,drawn:0,lost:1,gf:2,ga:3,pts:3},{name:'ベルギー',flag:'🇧🇪',played:2,won:0,drawn:1,lost:1,gf:2,ga:3,pts:1},{name:'アルジェリア',flag:'🇩🇿',played:2,won:0,drawn:1,lost:1,gf:1,ga:3,pts:1}]},
+  {id:'D',teams:[{name:'ブラジル',flag:'🇧🇷',played:2,won:1,drawn:1,lost:0,gf:3,ga:1,pts:4},{name:'コロンビア',flag:'🇨🇴',played:2,won:1,drawn:0,lost:1,gf:2,ga:2,pts:3},{name:'エクアドル',flag:'🇪🇨',played:2,won:1,drawn:0,lost:1,gf:2,ga:2,pts:3},{name:'イラク',flag:'🇮🇶',played:2,won:0,drawn:1,lost:1,gf:1,ga:3,pts:1}]},
+  {id:'E',teams:[{name:'スペイン',flag:'🇪🇸',played:2,won:2,drawn:0,lost:0,gf:6,ga:1,pts:6},{name:'ドイツ',flag:'🇩🇪',played:2,won:1,drawn:0,lost:1,gf:3,ga:3,pts:3},{name:'コスタリカ',flag:'🇨🇷',played:2,won:0,drawn:1,lost:1,gf:1,ga:3,pts:1},{name:'スロベニア',flag:'🇸🇮',played:2,won:0,drawn:1,lost:1,gf:2,ga:5,pts:1}]},
+  {id:'F',teams:[{name:'オランダ',flag:'🇳🇱',played:1,won:1,drawn:0,lost:0,gf:2,ga:0,pts:3},{name:'日本',flag:'🇯🇵',played:1,won:1,drawn:0,lost:0,gf:1,ga:0,pts:3},{name:'スウェーデン',flag:'🇸🇪',played:1,won:0,drawn:0,lost:1,gf:0,ga:1,pts:0},{name:'チュニジア',flag:'🇹🇳',played:1,won:0,drawn:0,lost:1,gf:0,ga:2,pts:0}]},
+  {id:'G',teams:[{name:'ポルトガル',flag:'🇵🇹',played:1,won:1,drawn:0,lost:0,gf:3,ga:0,pts:3},{name:'イングランド',flag:'🏴󠁧󠁢󠁥󠁮󠁧󠁿',played:1,won:1,drawn:0,lost:0,gf:2,ga:0,pts:3},{name:'モロッコ',flag:'🇲🇦',played:1,won:0,drawn:0,lost:1,gf:0,ga:2,pts:0},{name:'ジャマイカ',flag:'🇯🇲',played:1,won:0,drawn:0,lost:1,gf:0,ga:3,pts:0}]},
+  {id:'H',teams:[{name:'イタリア',flag:'🇮🇹',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'エジプト',flag:'🇪🇬',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'ニュージーランド',flag:'🇳🇿',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'コートジボワール',flag:'🇨🇮',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0}]},
+  {id:'I',teams:[{name:'韓国',flag:'🇰🇷',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'ポーランド',flag:'🇵🇱',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'サウジアラビア',flag:'🇸🇦',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'ガーナ',flag:'🇬🇭',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0}]},
+  {id:'J',teams:[{name:'オーストラリア',flag:'🇦🇺',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'ウクライナ',flag:'🇺🇦',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'セネガル',flag:'🇸🇳',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'ナイジェリア',flag:'🇳🇬',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0}]},
+  {id:'K',teams:[{name:'デンマーク',flag:'🇩🇰',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'トルコ',flag:'🇹🇷',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'カメルーン',flag:'🇨🇲',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'バーレーン',flag:'🇧🇭',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0}]},
+  {id:'L',teams:[{name:'スイス',flag:'🇨🇭',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'チェコ',flag:'🇨🇿',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'セルビア',flag:'🇷🇸',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0},{name:'チュニジア',flag:'🇹🇳',played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0}]}
+];
+var DEMO_SCHEDULE=[
+  {id:1,homeTeam:{name:'メキシコ',flag:'🇲🇽'},awayTeam:{name:'コスタリカ',flag:'🇨🇷'},group:'C',date:'2026-06-11',kickoff:'05:00',venue:'AT&Tスタジアム(ダラス)',status:'FINISHED',score:{home:1,away:0},isJapan:false},
+  {id:2,homeTeam:{name:'カナダ',flag:'🇨🇦'},awayTeam:{name:'ウルグアイ',flag:'🇺🇾'},group:'A',date:'2026-06-12',kickoff:'04:00',venue:'BMOフィールド(トロント)',status:'FINISHED',score:{home:2,away:1},isJapan:false},
+  {id:3,homeTeam:{name:'オランダ',flag:'🇳🇱'},awayTeam:{name:'チュニジア',flag:'🇹🇳'},group:'F',date:'2026-06-12',kickoff:'07:00',venue:'ロサンゼルスSFC',status:'FINISHED',score:{home:2,away:0},isJapan:false},
+  {id:4,homeTeam:{name:'日本',flag:'🇯🇵'},awayTeam:{name:'スウェーデン',flag:'🇸🇪'},group:'F',date:'2026-06-13',kickoff:'04:00',venue:'ジレットスタジアム(ボストン)',status:'FINISHED',score:{home:1,away:0},isJapan:true},
+  {id:5,homeTeam:{name:'アルゼンチン',flag:'🇦🇷'},awayTeam:{name:'チリ',flag:'🇨🇱'},group:'B',date:'2026-06-13',kickoff:'07:00',venue:'メトライフスタジアム(NY)',status:'FINISHED',score:{home:3,away:0},isJapan:false},
+  {id:6,homeTeam:{name:'スペイン',flag:'🇪🇸'},awayTeam:{name:'コスタリカ',flag:'🇨🇷'},group:'E',date:'2026-06-15',kickoff:'05:00',venue:'アトランタ',status:'FINISHED',score:{home:4,away:0},isJapan:false},
+  {id:7,homeTeam:{name:'日本',flag:'🇯🇵'},awayTeam:{name:'チュニジア',flag:'🇹🇳'},group:'F',date:'2026-06-17',kickoff:'08:00',venue:'ジレットスタジアム(ボストン)',status:'SCHEDULED',score:null,isJapan:true},
+  {id:8,homeTeam:{name:'オランダ',flag:'🇳🇱'},awayTeam:{name:'スウェーデン',flag:'🇸🇪'},group:'F',date:'2026-06-17',kickoff:'05:00',venue:'ロサンゼルスSFC',status:'SCHEDULED',score:null,isJapan:false},
+  {id:9,homeTeam:{name:'チュニジア',flag:'🇹🇳'},awayTeam:{name:'スウェーデン',flag:'🇸🇪'},group:'F',date:'2026-06-21',kickoff:'05:00',venue:'レビスタジアム(SF)',status:'SCHEDULED',score:null,isJapan:false},
+  {id:10,homeTeam:{name:'日本',flag:'🇯🇵'},awayTeam:{name:'オランダ',flag:'🇳🇱'},group:'F',date:'2026-06-21',kickoff:'05:00',venue:'ジレットスタジアム(ボストン)',status:'SCHEDULED',score:null,isJapan:true}
+];
+var DEMO_SCORERS=[
+  {name:'Kylian Mbappé',team:'フランス 🇫🇷',goals:2,assists:1},
+  {name:'Lionel Messi',team:'アルゼンチン 🇦🇷',goals:2,assists:2},
+  {name:'Cody Gakpo',team:'オランダ 🇳🇱',goals:1,assists:1},
+  {name:'Lamine Yamal',team:'スペイン 🇪🇸',goals:1,assists:2},
+  {name:'上田綺世',team:'日本 🇯🇵',goals:1,assists:0},
+  {name:'Vinicius Jr',team:'ブラジル 🇧🇷',goals:1,assists:1}
+];
+
+// ==================== FLAGS ====================
+var FLAG_MAP={JPN:'🇯🇵',NLD:'🇳🇱',NED:'🇳🇱',SWE:'🇸🇪',TUN:'🇹🇳',USA:'🇺🇸',CAN:'🇨🇦',MEX:'🇲🇽',BRA:'🇧🇷',ARG:'🇦🇷',FRA:'🇫🇷',ESP:'🇪🇸',SPA:'🇪🇸',GER:'🇩🇪',DEU:'🇩🇪',GBR:'🏴󠁧󠁢󠁥󠁮󠁧󠁿',ENG:'🏴󠁧󠁢󠁥󠁮󠁧󠁿',PRT:'🇵🇹',ITA:'🇮🇹',BEL:'🇧🇪',CRO:'🇭🇷',URY:'🇺🇾',URU:'🇺🇾',COL:'🇨🇴',ECU:'🇪🇨',CHL:'🇨🇱',CHI:'🇨🇱',PER:'🇵🇪',MAR:'🇲🇦',SEN:'🇸🇳',NGA:'🇳🇬',CMR:'🇨🇲',EGY:'🇪🇬',GHA:'🇬🇭',CIV:'🇨🇮',SAU:'🇸🇦',KSA:'🇸🇦',IRQ:'🇮🇶',AUS:'🇦🇺',KOR:'🇰🇷',POL:'🇵🇱',UKR:'🇺🇦',CZE:'🇨🇿',SRB:'🇷🇸',DEN:'🇩🇰',TUR:'🇹🇷',CHE:'🇨🇭',SUI:'🇨🇭',NZL:'🇳🇿',JAM:'🇯🇲',BHR:'🇧🇭',SVN:'🇸🇮',SLO:'🇸🇮',PAN:'🇵🇦',ALG:'🇩🇿',CRC:'🇨🇷'};
+var TEAM_JP={'Japan':'日本','Netherlands':'オランダ','Sweden':'スウェーデン','Tunisia':'チュニジア','France':'フランス','Mexico':'メキシコ','Belgium':'ベルギー','Algeria':'アルジェリア','Brazil':'ブラジル','Colombia':'コロンビア','Ecuador':'エクアドル','Iraq':'イラク','Spain':'スペイン','Germany':'ドイツ','Costa Rica':'コスタリカ','Slovenia':'スロベニア','Argentina':'アルゼンチン','Chile':'チリ','Croatia':'クロアチア','Peru':'ペルー','United States':'USA','USA':'USA','Canada':'カナダ','Uruguay':'ウルグアイ','Panama':'パナマ','Portugal':'ポルトガル','England':'イングランド','Morocco':'モロッコ','Jamaica':'ジャマイカ','Italy':'イタリア','Egypt':'エジプト','New Zealand':'ニュージーランド','South Korea':'韓国','Korea Republic':'韓国','Poland':'ポーランド','Saudi Arabia':'サウジアラビア','Ghana':'ガーナ','Australia':'オーストラリア','Ukraine':'ウクライナ','Senegal':'セネガル','Nigeria':'ナイジェリア','Cameroon':'カメルーン',"Côte d'Ivoire":'コートジボワール',"Ivory Coast":'コートジボワール','Czechia':'チェコ','Czech Republic':'チェコ','Serbia':'セルビア','Denmark':'デンマーク','Turkey':'トルコ','Türkiye':'トルコ','Switzerland':'スイス','Bahrain':'バーレーン'};
+function getFlag(t){return FLAG_MAP[t]||'🏳️';}
+function getJP(e){return TEAM_JP[e]||e;}
+
+// ==================== ESPN TRANSFORM ====================
+function transformEspnEvents(events){
+  var teamsMap={},matchList=[];
+  events.forEach(function(ev){
+    var comp=ev.competitions&&ev.competitions[0];if(!comp)return;
+    var groupNote='';
+    (comp.notes||[]).forEach(function(n){if(n.headline&&/Group [A-L]/i.test(n.headline))groupNote=n.headline;});
+    var gm=groupNote.match(/Group ([A-L])/i),gId=gm?gm[1].toUpperCase():'KO';
+    var home=(comp.competitors||[]).find(function(c){return c.homeAway==='home';}),away=(comp.competitors||[]).find(function(c){return c.homeAway==='away';});
+    if(!home||!away)return;
+    var hN=home.team.displayName,aN=away.team.displayName;
+    var hJP=getJP(hN),aJP=getJP(aN),hF=getFlag(home.team.abbreviation),aF=getFlag(away.team.abbreviation);
+    var sn=comp.status.type.name,DONE={STATUS_FINAL:1,STATUS_FULL_TIME:1,STATUS_FINAL_AET:1,STATUS_FINAL_PEN:1};
+    var ds=DONE[sn]?'FINISHED':(sn==='STATUS_IN_PROGRESS'||sn==='STATUS_HALFTIME')?'LIVE':'SCHEDULED';
+    var score=null;if(ds!=='SCHEDULED')score={home:parseInt(home.score)||0,away:parseInt(away.score)||0};
+    var utc=new Date(ev.date),jst=new Date(utc.getTime()+9*3600000);
+    var dt=jst.toISOString().slice(0,10),tm=('0'+jst.getUTCHours()).slice(-2)+':'+('0'+jst.getUTCMinutes()).slice(-2);
+    var isJp=hN==='Japan'||aN==='Japan';
+    matchList.push({id:ev.id,homeTeam:{name:hJP,flag:hF},awayTeam:{name:aJP,flag:aF},group:gId,date:dt,kickoff:tm,venue:(comp.venue&&comp.venue.fullName)||'',status:ds,score:score,isJapan:isJp});
+    if(gId==='KO')return;
+    if(!teamsMap[gId])teamsMap[gId]={};
+    [[hN,hJP,hF,true],[aN,aJP,aF,false]].forEach(function(arr){
+      var raw=arr[0],jp=arr[1],fl=arr[2],isH=arr[3];
+      if(!teamsMap[gId][raw])teamsMap[gId][raw]={name:jp,flag:fl,played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0};
+      if(ds==='FINISHED'){var t=teamsMap[gId][raw];t.played++;var tf=isH?score.home:score.away,ta=isH?score.away:score.home;t.gf+=tf;t.ga+=ta;if(tf>ta){t.won++;t.pts+=3;}else if(tf===ta){t.drawn++;t.pts++;}else t.lost++;}
+    });
+  });
+  var groups=Object.keys(teamsMap).sort().map(function(g){return{id:g,teams:Object.values(teamsMap[g])};});
+  return{groups:groups.length?groups:null,matches:matchList.length?matchList:null,scorers:null};
+}
+
+// ==================== FDO TRANSFORM ====================
+function transformApiData(all){
+  var groups=[];
+  if(all.standings&&all.standings.standings){
+    all.standings.standings.forEach(function(s){
+      if(s.type==='TOTAL'){var gId=s.group?s.group.replace('GROUP_',''):'?';groups.push({id:gId,teams:s.table.map(function(t){return{name:t.team.shortName||t.team.name,flag:getFlag(t.team.tla),played:t.playedGames,won:t.won,drawn:t.draw,lost:t.lost,gf:t.goalsFor,ga:t.goalsAgainst,pts:t.points};})});}
+    });
+  }
+  var matches=[];
+  if(all.matches&&all.matches.matches){
+    all.matches.matches.forEach(function(m){
+      if(m.stage!=='GROUP_STAGE')return;
+      var utc=new Date(m.utcDate),jst=new Date(utc.getTime()+9*3600000);
+      var hN=m.homeTeam.shortName||m.homeTeam.name,aN=m.awayTeam.shortName||m.awayTeam.name;
+      matches.push({id:m.id,homeTeam:{name:hN,flag:getFlag(m.homeTeam.tla)},awayTeam:{name:aN,flag:getFlag(m.awayTeam.tla)},group:m.group?m.group.replace('GROUP_',''):'?',date:jst.toISOString().slice(0,10),kickoff:('0'+jst.getUTCHours()).slice(-2)+':'+('0'+jst.getUTCMinutes()).slice(-2),venue:m.venue||'',status:m.status,score:(m.score.fullTime.home!==null)?{home:m.score.fullTime.home,away:m.score.fullTime.away}:null,isJapan:hN.indexOf('Japan')>=0||aN.indexOf('Japan')>=0});
+    });
+  }
+  var scorers=[];
+  if(all.scorers&&all.scorers.scorers)all.scorers.scorers.slice(0,12).forEach(function(s){scorers.push({name:s.player.name,team:(s.team.shortName||s.team.name)+' '+getFlag(s.team.tla),goals:s.goals||0,assists:s.assists||0});});
+  return{groups:groups.length?groups:null,matches:matches.length?matches:null,scorers:scorers.length?scorers:null};
+}
+
+// ==================== EMPTY STATE ====================
+function renderAllEmpty(){
+  var re=document.getElementById('strip-recent'),up=document.getElementById('strip-upcoming');
+  if(re)re.innerHTML='<div class="strip-empty">取得中...</div>';
+  if(up)up.innerHTML='<div class="strip-empty">取得中...</div>';
+  var gc=document.getElementById('groups-container');if(gc)gc.innerHTML='<p style="color:var(--muted);padding:20px">データ取得中...</p>';
+  var sc=document.getElementById('schedule-container');if(sc)sc.innerHTML='<p style="color:var(--muted);padding:20px">データ取得中...</p>';
+  var jm=document.getElementById('japan-matches');if(jm)jm.innerHTML='';
+}
+
+// ==================== TOP STRIP ====================
+function renderTopStrip(data){
+  var matches=(data&&data.matches)?data.matches:[];
+  function sk(m){return m.date+'T'+m.kickoff;}
+  var finished=matches.filter(function(m){return m.status==='FINISHED';}).sort(function(a,b){return sk(b)>sk(a)?1:-1;}).slice(0,4);
+  var live=matches.filter(function(m){return m.status==='LIVE';});
+  var upcoming=matches.filter(function(m){return m.status==='SCHEDULED';}).sort(function(a,b){return sk(a)>sk(b)?1:-1;}).slice(0,4);
+
+  function stripCard(m){
+    var isJp=m.isJapan,isLive=m.status==='LIVE';
+    var cls='strip-match'+(isJp?' jp':'')+(isLive?' live-now':'');
+    var center;
+    if(m.score){
+      center='<div class="strip-center"><div class="strip-score">'+m.score.home+' - '+m.score.away+'</div><div class="strip-grp">G'+m.group+(isJp?' 🇯🇵':'')+'</div></div>';
+    }else if(isLive){
+      center='<div class="strip-center"><div class="strip-score" style="color:var(--red);font-size:.8rem">🔴 LIVE</div><div class="strip-grp">G'+m.group+(isJp?' 🇯🇵':'')+'</div></div>';
+    }else{
+      var d=new Date(m.date+'T00:00:00Z'),mo=d.getUTCMonth()+1,dy=d.getUTCDate();
+      center='<div class="strip-center"><div class="strip-dt">'+mo+'/'+dy+'</div><div class="strip-dt">'+m.kickoff+' JST</div><div class="strip-grp">G'+m.group+(isJp?' 🇯🇵':'')+'</div></div>';
+    }
+    return '<div class="'+cls+'"><div class="strip-team"><span class="strip-flag">'+m.homeTeam.flag+'</span><span class="name">'+m.homeTeam.name+'</span></div>'+center+'<div class="strip-team right"><span class="name">'+m.awayTeam.name+'</span><span class="strip-flag">'+m.awayTeam.flag+'</span></div></div>';
+  }
+
+  var re=document.getElementById('strip-recent'),up=document.getElementById('strip-upcoming');
+  if(!re||!up)return;
+  var recentList=live.concat(finished);
+  re.innerHTML=recentList.length?recentList.map(stripCard).join(''):'<div class="strip-empty">結果データなし</div>';
+  up.innerHTML=upcoming.length?upcoming.map(stripCard).join(''):'<div class="strip-empty">予定データなし</div>';
+}
+
+// ==================== RENDER GROUPS ====================
+function renderGroups(data){
+  var groups=(data&&data.groups)?data.groups:[];
+  var c=document.getElementById('groups-container');if(!c)return;c.innerHTML='';
+  groups.forEach(function(g){
+    var sorted=g.teams.slice().sort(function(a,b){return b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf;});
+    var html='<div class="group-card"><div class="group-hd"><span class="group-lbl">G'+g.id+'</span></div><div class="group-table-wrap"><table class="group-table"><thead><tr><th>#</th><th>チーム</th><th>試</th><th>勝</th><th>分</th><th>負</th><th>得</th><th>失</th><th>差</th><th>点</th></tr></thead><tbody>';
+    sorted.forEach(function(t,i){var gd=t.gf-t.ga,rc=i<2?'rank-'+(i+1):i===2?'rank-3':'';html+='<tr class="'+rc+'"><td>'+(i+1)+'</td><td><div class="team-cell"><span>'+t.flag+'</span>'+t.name+'</div></td><td>'+t.played+'</td><td>'+t.won+'</td><td>'+t.drawn+'</td><td>'+t.lost+'</td><td>'+t.gf+'</td><td>'+t.ga+'</td><td>'+(gd>0?'+':'')+gd+'</td><td class="pts-cell">'+t.pts+'</td></tr>';});
+    c.innerHTML+=html+'</tbody></table></div></div>';
+  });
+}
+
+// ==================== RENDER SCHEDULE ====================
+function renderSchedule(data){
+  var matches=(data&&data.matches)?data.matches:[];
+  renderFilteredSchedule(matches,currentScheduleFilter);
+}
+function filterSchedule(f,btn){
+  currentScheduleFilter=f;
+  document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  var matches=(liveData&&liveData.matches)?liveData.matches:DEMO_SCHEDULE;
+  renderFilteredSchedule(matches,f);
+}
+function renderFilteredSchedule(matches,filter){
+  var filtered=matches.filter(function(m){if(filter==='all')return true;if(filter==='japan')return m.isJapan;return m.group===filter;});
+  var c=document.getElementById('schedule-container');if(!c)return;
+  if(!filtered.length){c.innerHTML='<p style="color:var(--muted);text-align:center;padding:30px">試合がありません</p>';return;}
+  var byDate={};
+  filtered.forEach(function(m){if(!byDate[m.date])byDate[m.date]=[];byDate[m.date].push(m);});
+  c.innerHTML='';
+  Object.keys(byDate).sort().forEach(function(d){
+    var jst=new Date(d+'T00:00:00Z');
+    var ds=jst.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'});
+    var html='<div class="match-day-group"><div class="match-day-hd">'+ds+'</div>';
+    byDate[d].forEach(function(m){
+      var sp=m.status==='LIVE'?'<span class="status-pill status-live">🔴 LIVE</span>':m.status==='FINISHED'?'<span class="status-pill status-finished">終了</span>':'<span class="status-pill status-upcoming">'+m.kickoff+' JST</span>';
+      var sc=m.score?'<div class="match-score">'+m.score.home+' - '+m.score.away+'</div>':'<div class="match-tbd">vs</div>';
+      html+='<div class="match-card'+(m.isJapan?' japan-match':'')+'"><div class="match-team"><span class="match-team-flag">'+m.homeTeam.flag+'</span>'+m.homeTeam.name+'</div><div class="match-center">'+sc+sp+'<div><span class="group-badge">G'+m.group+'</span>'+(m.isJapan?'<span class="japan-star">🇯🇵</span>':'')+'</div><div class="match-venue">'+m.venue+'</div></div><div class="match-team right">'+m.awayTeam.name+'<span class="match-team-flag">'+m.awayTeam.flag+'</span></div></div>';
+    });
+    c.innerHTML+=html+'</div>';
+  });
+}
+
+// ==================== RENDER JAPAN ====================
+function renderJapan(data){
+  var matches=(data&&data.matches)?data.matches.filter(function(m){return m.isJapan;}):[];
+  var c=document.getElementById('japan-matches');if(!c)return;c.innerHTML='';
+  matches.forEach(function(m,i){
+    var opp=m.homeTeam.name==='日本'?m.awayTeam:m.homeTeam;
+    var resHtml='';
+    if(m.score){var hw=m.homeTeam.name==='日本'?m.score.home:m.score.away,aw=m.homeTeam.name==='日本'?m.score.away:m.score.home;var rt=hw>aw?'✅ 勝利':hw===aw?'🟡 引き分け':'❌ 敗戦';resHtml='<div class="japan-match-result">'+m.score.home+' - '+m.score.away+' <span style="font-size:.77rem">'+rt+'</span></div>';}
+    else{resHtml='<div style="text-align:center;color:var(--muted);margin:8px 0">'+m.kickoff+' JST キックオフ予定</div>';}
+    c.innerHTML+='<div class="japan-match-card"><div class="matchday-label">第'+(i+1)+'戦 ／ グループF</div><div class="japan-vs-row"><div class="japan-vs-team"><div class="japan-vs-flag">🇯🇵</div><div class="japan-vs-name">日本</div></div><div class="vs-text">vs</div><div class="japan-vs-team"><div class="japan-vs-flag">'+opp.flag+'</div><div class="japan-vs-name">'+opp.name+'</div></div></div>'+resHtml+'<div class="japan-match-info"><div class="japan-match-info-item"><div class="info-label">日時（JST）</div><div class="info-value">'+m.date+' '+m.kickoff+'</div></div><div class="japan-match-info-item"><div class="info-label">会場</div><div class="info-value" style="font-size:.68rem">'+m.venue+'</div></div></div></div>';
+  });
+  var groups=(data&&data.groups)?data.groups:[];
+  var gF=groups.find(function(g){return g.id==='F';});
+  var tb=document.getElementById('japan-group-table');
+  if(tb&&gF){
+    var sorted=gF.teams.slice().sort(function(a,b){return b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf;});
+    tb.innerHTML='';
+    sorted.forEach(function(t,i){var gd=t.gf-t.ga,isJp=t.name==='日本';tb.innerHTML+='<tr style="'+(isJp?'background:rgba(188,0,45,.08)':'')+'"><td>'+(i+1)+'</td><td><div class="team-cell"><span>'+t.flag+'</span>'+t.name+(isJp?' ⭐':'')+'</div></td><td>'+t.played+'</td><td>'+t.won+'</td><td>'+t.drawn+'</td><td>'+t.lost+'</td><td>'+t.gf+'</td><td>'+t.ga+'</td><td>'+(gd>0?'+':'')+gd+'</td><td class="pts-cell">'+t.pts+'</td></tr>';});
+  }
+}
+
+// ==================== RENDER SCORERS ====================
+function renderScorers(data){
+  var scorers=(data&&data.scorers)?data.scorers:[];
+  var c=document.getElementById('scorers-container');if(!c)return;
+  c.innerHTML='<div class="scorers-grid"></div>';
+  var g=c.querySelector('.scorers-grid'),medals=['🥇','🥈','🥉'];
+  scorers.slice(0,12).forEach(function(s,i){g.innerHTML+='<div class="scorer-card"><div class=
