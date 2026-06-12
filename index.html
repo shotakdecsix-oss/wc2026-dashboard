@@ -217,6 +217,15 @@
     .modal-stat-bar{height:4px;border-radius:2px;background:var(--blue);}
     .modal-stat-bar.right{background:var(--gold);}
     .modal-loading{text-align:center;padding:20px;color:var(--muted);font-size:.8rem;}
+    .modal-lineups{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;}
+    .modal-lineup-hd{font-size:.72rem;font-weight:700;margin-bottom:5px;display:flex;align-items:center;gap:4px;}
+    .modal-player{display:flex;align-items:center;gap:5px;padding:2px 0;font-size:.73rem;line-height:1.3;}
+    .modal-player-no{font-size:.65rem;color:var(--muted);min-width:18px;text-align:right;}
+    .modal-player-name{color:var(--text);}
+    .modal-player.sub .modal-player-name{color:var(--muted);}
+    .modal-event-card{display:inline-block;width:9px;height:12px;border-radius:1px;vertical-align:middle;margin-right:2px;}
+    .modal-event-card.yellow{background:#f5c542;}
+    .modal-event-card.red{background:#ef4444;}
   </style>
 </head>
 <body>
@@ -628,19 +637,61 @@ function renderModalDetail(d,m){
   var area=document.getElementById('modal-detail-area');
   if(!area)return;
   var html='';
-  // Goals / key events
-  var plays=(d.scoringPlays||[]);
-  if(plays.length){
+
+  // ── Key Events (Goals, Cards) ──
+  var ke=(d.keyEvents||[]);
+  var goalEvents=ke.filter(function(e){var tp=(e.type&&e.type.type)||'';var t=(e.type&&e.type.text)||'';return tp==='goal'||t==='Goal'||t==='Own Goal'||t.indexOf('Goal')===0;});
+  var cardEvents=ke.filter(function(e){var t=(e.type&&e.type.text)||'';return t==='Yellow Card'||t==='Red Card';});
+
+  if(goalEvents.length){
     html+='<div class="modal-section"><div class="modal-section-title">⚽ ゴール</div>';
-    plays.forEach(function(p){
-      var side=p.team&&p.team.homeAway==='home'?m.homeTeam.name:m.awayTeam.name;
-      var scorer=(p.participants||[]).map(function(x){return x.athlete&&x.athlete.shortName||x.athlete&&x.athlete.displayName||'';}).filter(Boolean).join(', ');
-      var min=(p.clock&&p.clock.displayValue)||(p.period&&p.period.displayValue)||'';
-      html+='<div class="modal-event"><span class="modal-event-min">'+min+'</span><span class="modal-event-icon">⚽</span><span>'+scorer+' <span style="color:var(--muted);font-size:.75rem">('+side+')</span></span></div>';
+    goalEvents.forEach(function(e){
+      var min=(e.clock&&e.clock.displayValue)||'';
+      var isOG=(e.type&&e.type.text)==='Own Goal';
+      var desc=e.shortText||'';
+      // shortText is like "Julián Quiñones Goal" or "Raúl Jiménez Goal - Header"
+      var scorer=desc.replace(/ Goal.*$/,'').replace(/ Own Goal.*$/,'');
+      var teamName=(e.team&&e.team.displayName)||'';
+      var side=teamName===m.homeTeam.name?m.homeTeam.flag:m.awayTeam.flag;
+      html+='<div class="modal-event"><span class="modal-event-min">'+min+'</span>'
+        +'<span class="modal-event-icon">'+(isOG?'🔴':'⚽')+'</span>'
+        +'<span class="modal-player-name">'+scorer+(isOG?' (OG)':'')+'</span>'
+        +'<span style="margin-left:auto;font-size:.8rem">'+side+'</span></div>';
     });
     html+='</div>';
   }
-  // Stats
+
+  // ── Fallback: scoringPlays (older ESPN format) ──
+  if(!goalEvents.length){
+    var plays=(d.scoringPlays||[]);
+    if(plays.length){
+      html+='<div class="modal-section"><div class="modal-section-title">⚽ ゴール</div>';
+      plays.forEach(function(p){
+        var side=p.team&&p.team.homeAway==='home'?m.homeTeam.flag:m.awayTeam.flag;
+        var scorer=(p.participants||[]).map(function(x){return x.athlete&&(x.athlete.shortName||x.athlete.displayName)||'';}).filter(Boolean).join(', ');
+        var min=(p.clock&&p.clock.displayValue)||(p.period&&p.period.displayValue)||'';
+        html+='<div class="modal-event"><span class="modal-event-min">'+min+'</span><span class="modal-event-icon">⚽</span><span class="modal-player-name">'+scorer+'</span><span style="margin-left:auto;font-size:.8rem">'+side+'</span></div>';
+      });
+      html+='</div>';
+    }
+  }
+
+  // ── Yellow / Red Cards ──
+  if(cardEvents.length){
+    html+='<div class="modal-section"><div class="modal-section-title">🟨 カード</div>';
+    cardEvents.forEach(function(e){
+      var min=(e.clock&&e.clock.displayValue)||'';
+      var isRed=(e.type&&e.type.text)==='Red Card';
+      var desc=e.shortText||e.text||'';
+      var player=desc.replace(/ Yellow Card$/,'').replace(/ Red Card$/,'');
+      html+='<div class="modal-event"><span class="modal-event-min">'+min+'</span>'
+        +'<span><span class="modal-event-card '+(isRed?'red':'yellow')+'"></span>'
+        +'<span class="modal-player-name">'+player+'</span></span></div>';
+    });
+    html+='</div>';
+  }
+
+  // ── Stats ──
   var boxscore=d.boxScore||d.boxscore||{};
   var teamStats=(boxscore.teams||boxscore.players||[]);
   if(teamStats.length>=2){
@@ -658,11 +709,32 @@ function renderModalDetail(d,m){
     });
     if(statsHtml)html+='<div class="modal-section"><div class="modal-section-title">📊 スタッツ</div>'+statsHtml+'</div>';
   }
+
+  // ── Lineups ──
+  var rosters=d.rosters||[];
+  if(rosters.length>=2){
+    var homeR=rosters[0].homeAway==='home'?rosters[0]:rosters[1];
+    var awayR=rosters[0].homeAway==='away'?rosters[0]:rosters[1];
+    function buildLineup(r,team){
+      var spots=r.roster||[];
+      var starters=spots.filter(function(s){return s.starter;}).slice(0,11);
+      var formation=r.formation||'';
+      var h='<div><div class="modal-lineup-hd"><span>'+team.flag+'</span><span>'+team.name+'</span>';
+      if(formation)h+='<span style="color:var(--muted);font-size:.68rem;margin-left:4px">'+formation+'</span>';
+      h+='</div>';
+      starters.forEach(function(s){
+        var name=s.athlete&&(s.athlete.shortName||s.athlete.displayName)||'';
+        h+='<div class="modal-player"><span class="modal-player-no">'+(s.jersey||'')+'</span><span class="modal-player-name">'+name+'</span></div>';
+      });
+      h+='</div>';
+      return h;
+    }
+    html+='<div class="modal-section"><div class="modal-section-title">👥 スターティングXI</div>'
+      +'<div class="modal-lineups">'+buildLineup(homeR,m.homeTeam)+buildLineup(awayR,m.awayTeam)+'</div></div>';
+  }
+
   if(!html){
-    var msg=d&&(d.scoringPlays||[]).length===0&&(!d.boxScore||!(d.boxScore.teams||[]).length)
-      ?'<p style="color:var(--muted);font-size:.72rem;text-align:center;padding:12px">📊 スタッツデータ集計中</p>'
-      :'';
-    area.innerHTML=msg;
+    area.innerHTML='<p style="color:var(--muted);font-size:.72rem;text-align:center;padding:12px">📊 スタッツデータ集計中</p>';
   } else {
     area.innerHTML=html;
   }
