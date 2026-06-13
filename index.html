@@ -1096,16 +1096,35 @@ function renderTactics(){
   html+='</div><div id="pas2026-note" style="font-size:.6rem;color:var(--muted);margin-top:6px">2026データを取得中...</div></div>';
   el.innerHTML=html;
 
-  // Async: fetch 2026 formation data from ESPN match summaries
+  // Async: fetch 2026 data (formation + physical stats) from ESPN match summaries
   var matches=(liveData&&liveData.matches)||[];
   var finished=matches.filter(function(m){return m.status==='FINISHED';});
   if(!finished.length){
-    var b0=document.getElementById('fm2026-bar'),n0=document.getElementById('fm2026-note');
-    if(b0)b0.innerHTML='<span style="font-size:.6rem;color:var(--muted);padding:0 10px">試合データなし（開幕前）</span>';
-    if(n0)n0.textContent='2026: 試合開始前';
+    ['fm2026-bar','run2026-bar','spr2026-bar','pas2026-bar'].forEach(function(id){
+      var el2=document.getElementById(id);
+      if(el2){el2.style.background='rgba(255,255,255,.04)';el2.innerHTML='';}
+    });
+    ['fm2026-note','run2026-note','spr2026-note','pas2026-note'].forEach(function(id){
+      var el2=document.getElementById(id);if(el2)el2.textContent='2026: 試合開始前';
+    });
+    ['run2026-val','spr2026-val','pas2026-val'].forEach(function(id){
+      var el2=document.getElementById(id);if(el2)el2.textContent='--';
+    });
     return;
   }
-  var formMap={},pending=finished.length,done=0;
+  var formMap={},runTot=0,runCnt=0,sprTot=0,sprCnt=0,pasTot=0,pasCnt=0;
+  var pending=finished.length,done=0;
+  function getStat(stats,names){
+    for(var i=0;i<names.length;i++){
+      for(var j=0;j<stats.length;j++){
+        if(stats[j].name===names[i]&&stats[j].value!==undefined&&stats[j].value!==null){
+          var v=parseFloat(stats[j].value);
+          if(!isNaN(v))return v;
+        }
+      }
+    }
+    return null;
+  }
   function categorize(f){
     if(!f)return null;
     f=f.trim();
@@ -1115,9 +1134,7 @@ function renderTactics(){
     if(f==='4-4-2'||f==='4-4-1-1')return '4-4-2';
     return 'その他';
   }
-  function finalize(){
-    done++;
-    if(done<pending)return;
+  function updateFormation(){
     var bar=document.getElementById('fm2026-bar'),note=document.getElementById('fm2026-note');
     var total=Object.values(formMap).reduce(function(s,v){return s+v;},0);
     if(!total){
@@ -1142,13 +1159,51 @@ function renderTactics(){
     }
     if(note){note.style.color='var(--blue)';note.textContent='📊 2026実績（'+pending+'試合完了・'+total+'チーム分析済）';}
   }
+  function updatePhysical(){
+    function apply(barId,valId,noteId,cnt,tot,max,color,unit,label){
+      var bar=document.getElementById(barId),val=document.getElementById(valId),note=document.getElementById(noteId);
+      if(cnt>0){
+        var avg=tot/cnt;
+        var disp=unit==='km'?(Math.round(avg*10)/10).toFixed(1):''+Math.round(avg);
+        var pct=Math.round(avg/max*100);
+        if(bar)bar.style.background='linear-gradient(to right,'+color+' '+pct+'%,rgba(255,255,255,.08) '+pct+'%)';
+        if(val){val.textContent=disp;val.style.color='';}
+        if(note){note.style.color='var(--blue)';note.textContent='📊 2026実績 平均'+disp+unit+'（'+cnt+'チーム分）';}
+      }else{
+        if(val){val.textContent='--';val.style.color='var(--muted)';}
+        if(note)note.textContent='2026: '+label+'データなし（ESPN未収録）';
+      }
+    }
+    apply('run2026-bar','run2026-val','run2026-note',runCnt,runTot,125,'var(--blue)','km','走行距離');
+    apply('spr2026-bar','spr2026-val','spr2026-note',sprCnt,sprTot,290,'var(--gold)','回','スプリント');
+    apply('pas2026-bar','pas2026-val','pas2026-note',pasCnt,pasTot,560,'var(--green)','本','パス');
+  }
+  function finalize(){
+    done++;
+    if(done<pending)return;
+    updateFormation();
+    updatePhysical();
+  }
   finished.forEach(function(m){
     fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event='+m.id)
       .then(function(r){return r.json();})
       .then(function(d){
+        // Formation
         (d.rosters||[]).forEach(function(r){
           var cat=categorize(r.formation||'');
           if(cat)formMap[cat]=(formMap[cat]||0)+1;
+        });
+        // Physical stats: try boxscore.teams, then statistics[0].teams
+        var teams=(d.boxscore&&d.boxscore.teams)||[];
+        if(!teams.length&&d.statistics&&d.statistics[0])teams=d.statistics[0].teams||[];
+        teams.forEach(function(t){
+          var stats=t.statistics||[];
+          var dist=getStat(stats,['totalDistance','distanceCovered','totalDistanceCovered','kilometresCovered','kilometers','totalKilometersCovered']);
+          var spr=getStat(stats,['sprints','sprintsTotal','totalSprints','numberOfSprints','sprintCount']);
+          var pas=getStat(stats,['totalPasses','passes','passingTotal','passesTotal','passAttempts','totalPassAttempts']);
+          if(dist!==null){runTot+=dist;runCnt++;}
+          if(spr!==null){sprTot+=spr;sprCnt++;}
+          if(pas!==null){pasTot+=pas;pasCnt++;}
         });
         finalize();
       })
