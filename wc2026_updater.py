@@ -1,0 +1,860 @@
+#!/usr/bin/env python3
+"""
+FIFA World Cup 2026 Dashboard Auto-Updater
+Fetches live scores and deploys to Netlify automatically.
+Run via Windows Task Scheduler every 5 minutes.
+"""
+
+import requests
+import json
+import os
+import re
+import sys
+import zipfile
+import io
+import shutil
+import glob
+import traceback
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+# ── Config ──────────────────────────────────────────────────────────────────
+SCRIPT_DIR   = Path(__file__).parent
+CONFIG_FILE  = SCRIPT_DIR / 'wc2026_config.json'
+HTML_TEMPLATE = SCRIPT_DIR / 'wc2026_dashboard.html'
+LOG_FILE     = SCRIPT_DIR / 'wc2026_updater.log'
+
+GITHUB_USER = 'shotakdecsix-oss'
+GITHUB_REPO = 'wc2026-dashboard'
+JST = timezone(timedelta(hours=9))
+
+HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/125.0.0.0 Safari/537.36'
+    )
+}
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+def log(msg):
+    ts = datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')
+    line = f"[{ts}] {msg}"
+    try:
+        print(line)
+    except UnicodeEncodeError:
+        print(line.encode('ascii', 'replace').decode())
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        f.write(line + '\n')
+
+# ── Config load/save ─────────────────────────────────────────────────────────
+def load_config():
+    if CONFIG_FILE.exists():
+        return json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
+    return {}
+
+def save_config(cfg):
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding='utf-8')
+
+
+# ── Flag / team helpers ───────────────────────────────────────────────────────
+FLAG_MAP = {
+    'JPN':'🇯🇵','NLD':'🇳🇱','NED':'🇳🇱','SWE':'🇸🇪','TUN':'🇹🇳','USA':'🇺🇸',
+    'CAN':'🇨🇦','MEX':'🇲🇽','BRA':'🇧🇷','ARG':'🇦🇷','FRA':'🇫🇷','ESP':'🇪🇸',
+    'GER':'🇩🇪','DEU':'🇩🇪','ENG':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','PRT':'🇵🇹','ITA':'🇮🇹','BEL':'🇧🇪',
+    'CRO':'🇭🇷','URU':'🇺🇾','COL':'🇨🇴','ECU':'🇪🇨','CHL':'🇨🇱','PER':'🇵🇪',
+    'MAR':'🇲🇦','SEN':'🇸🇳','NGA':'🇳🇬','CMR':'🇨🇲','EGY':'🇪🇬','GHA':'🇬🇭',
+    'CIV':'🇨🇮','SAU':'🇸🇦','KSA':'🇸🇦','IRQ':'🇮🇶','AUS':'🇦🇺','KOR':'🇰🇷',
+    'POL':'🇵🇱','UKR':'🇺🇦','CZE':'🇨🇿','SRB':'🇷🇸','DEN':'🇩🇰','TUR':'🇹🇷',
+    'CHE':'🇨🇭','SUI':'🇨🇭','NZL':'🇳🇿','JAM':'🇯🇲','BHR':'🇧🇭','SVN':'🇸🇮',
+    'PAN':'🇵🇦','ALG':'🇩🇿','CRC':'🇨🇷','RSA':'🇿🇦','QAT':'🇶🇦','NOR':'🇳🇴',
+    'SWZ':'🇸🇿','HAI':'🇭🇹','SCO':'🏴󠁧󠁢󠁳󠁣󠁴󠁿','PAR':'🇵🇾','BOH':'🇧🇦','UZB':'🇺🇿',
+    'CPV':'🇨🇻','URY':'🇺🇾','DRC':'🇨🇩','GRD':'🇬🇩','AUT':'🇦🇹','JOR':'🇯🇴',
+    'ALG':'🇩🇿','HTI':'🇭🇹',
+}
+
+TEAM_JP = {
+    'Japan':'日本','Netherlands':'オランダ','Sweden':'スウェーデン','Tunisia':'チュニジア',
+    'France':'フランス','Mexico':'メキシコ','Belgium':'ベルギー','Algeria':'アルジェリア',
+    'Brazil':'ブラジル','Colombia':'コロンビア','Ecuador':'エクアドル','Iraq':'イラク',
+    'Spain':'スペイン','Germany':'ドイツ','Costa Rica':'コスタリカ','Slovenia':'スロベニア',
+    'Argentina':'アルゼンチン','Chile':'チリ','Croatia':'クロアチア','Peru':'ペルー',
+    'United States':'USA','USA':'USA','Canada':'カナダ','Uruguay':'ウルグアイ',
+    'Panama':'パナマ','Portugal':'ポルトガル','England':'イングランド','Morocco':'モロッコ',
+    'Jamaica':'ジャマイカ','Italy':'イタリア','Egypt':'エジプト','New Zealand':'ニュージーランド',
+    'South Korea':'韓国','Korea Republic':'韓国','Poland':'ポーランド',
+    'Saudi Arabia':'サウジアラビア','Ghana':'ガーナ','Australia':'オーストラリア',
+    'Ukraine':'ウクライナ','Senegal':'セネガル','Nigeria':'ナイジェリア','Cameroon':'カメルーン',
+    "Ivory Coast":'コートジボワール',"Côte d'Ivoire":'コートジボワール',
+    'Czechia':'チェコ','Czech Republic':'チェコ','Serbia':'セルビア','Denmark':'デンマーク',
+    'Turkey':'トルコ','Türkiye':'トルコ','Switzerland':'スイス','Bahrain':'バーレーン',
+    'South Africa':'南アフリカ','Qatar':'カタール','Norway':'ノルウェー','Haiti':'ハイチ',
+    'Scotland':'スコットランド','Paraguay':'パラグアイ','Bosnia and Herzegovina':'ボスニア',
+    'Bosnia & Herzegovina':'ボスニア','Uzbekistan':'ウズベキスタン','Cape Verde':'カーボベルデ',
+    'DR Congo':'コンゴ民主共和国','Democratic Republic of Congo':'コンゴ民主共和国',
+    'Austria':'オーストリア','Jordan':'ヨルダン','Croatia':'クロアチア',
+    'Iran':'イラン','New Zealand':'ニュージーランド','Belgium':'ベルギー',
+}
+
+def get_flag(abbr):
+    return FLAG_MAP.get(abbr, '🏳️')
+
+def get_jp(name):
+    return TEAM_JP.get(name, name)
+
+
+# ── ESPN fetch ────────────────────────────────────────────────────────────────
+def fetch_espn():
+    """Fetch all WC2026 events using date-range query to get full schedule."""
+    from datetime import date as _date
+    base = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=150&dates='
+    seen, events = set(), []
+
+    # First try: single range query covering entire tournament
+    try:
+        r = requests.get(base + '20260611-20260720', headers=HEADERS, timeout=15)
+        for ev in r.json().get('events', []):
+            if ev['id'] not in seen:
+                seen.add(ev['id'])
+                events.append(ev)
+        log(f"ESPN range query: {len(events)} events")
+    except Exception as e:
+        log(f"ESPN range query failed: {e}")
+
+    # Fallback: daily queries for every day in tournament (if range returned too few)
+    if len(events) < 20:
+        log("Falling back to daily queries...")
+        d = _date(2026, 6, 11)
+        end = _date(2026, 7, 20)
+        while d <= end:
+            ds = d.strftime('%Y%m%d')
+            try:
+                r = requests.get(base + ds, headers=HEADERS, timeout=10)
+                for ev in r.json().get('events', []):
+                    if ev['id'] not in seen:
+                        seen.add(ev['id'])
+                        events.append(ev)
+            except Exception:
+                pass
+            d += timedelta(days=1)
+        log(f"ESPN daily queries total: {len(events)} events")
+
+    log(f"ESPN: {len(events)} events fetched")
+    return events
+
+
+def transform_espn(events, team_to_group=None):
+    """Transform ESPN raw events into dashboard data format."""
+    teams_map = {}
+    matches   = []
+    for ev in events:
+        comp = (ev.get('competitions') or [{}])[0]
+        # group: try notes first
+        group_note = ''
+        for n in comp.get('notes', []):
+            if n.get('headline') and re.search(r'Group [A-L]', n['headline'], re.I):
+                group_note = n['headline']
+        gm   = re.search(r'Group ([A-L])', group_note, re.I)
+        g_id_from_notes = gm.group(1).upper() if gm else None
+
+        comps = comp.get('competitors', [])
+        home = next((c for c in comps if c['homeAway'] == 'home'), None)
+        away = next((c for c in comps if c['homeAway'] == 'away'), None)
+        if not home or not away:
+            continue
+
+        h_name = home['team']['displayName']
+        a_name = away['team']['displayName']
+
+        # Determine group: notes → standings lookup → slug check → KO
+        if g_id_from_notes:
+            g_id = g_id_from_notes
+        elif team_to_group:
+            g_id = team_to_group.get(h_name) or team_to_group.get(a_name) or 'KO'
+        else:
+            slug = ev.get('season', {}).get('slug', '')
+            g_id = 'GROUP' if 'group' in slug.lower() else 'KO'
+        h_jp   = get_jp(h_name)
+        a_jp   = get_jp(a_name)
+        h_flag = get_flag(home['team']['abbreviation'])
+        a_flag = get_flag(away['team']['abbreviation'])
+
+        sn = comp.get('status', {}).get('type', {}).get('name', '')
+        FINISHED_STATUSES = {'STATUS_FINAL', 'STATUS_FULL_TIME',
+                             'STATUS_FINAL_AET', 'STATUS_FINAL_PEN'}
+        if sn in FINISHED_STATUSES:
+            status = 'FINISHED'
+        elif sn in ('STATUS_IN_PROGRESS', 'STATUS_HALFTIME'):
+            status = 'LIVE'
+        else:
+            status = 'SCHEDULED'
+
+        score = None
+        if status != 'SCHEDULED':
+            try:
+                score = {'home': int(home.get('score', 0) or 0),
+                         'away': int(away.get('score', 0) or 0)}
+            except Exception:
+                pass
+
+        utc = datetime.fromisoformat(ev['date'].replace('Z', '+00:00'))
+        jst = utc.astimezone(JST)
+        date_str = jst.strftime('%Y-%m-%d')
+        time_str = jst.strftime('%H:%M')
+        is_japan = h_name == 'Japan' or a_name == 'Japan'
+
+        matches.append({
+            'id': ev['id'],
+            'homeTeam': {'name': h_jp, 'flag': h_flag},
+            'awayTeam': {'name': a_jp, 'flag': a_flag},
+            'homeTeamEn': h_name,
+            'awayTeamEn': a_name,
+            'group': g_id, 'date': date_str, 'kickoff': time_str,
+            'venue': comp.get('venue', {}).get('fullName', ''),
+            'status': status, 'score': score, 'isJapan': is_japan,
+        })
+
+        # standings calc
+        if g_id in ('KO', 'GROUP') or status != 'FINISHED' or not score:
+            continue
+        for (raw, jp, fl, is_home) in [
+                (h_name, h_jp, h_flag, True),
+                (a_name, a_jp, a_flag, False)]:
+            if g_id not in teams_map:
+                teams_map[g_id] = {}
+            if raw not in teams_map[g_id]:
+                teams_map[g_id][raw] = {'name':jp,'flag':fl,'played':0,
+                                         'won':0,'drawn':0,'lost':0,
+                                         'gf':0,'ga':0,'pts':0}
+            t  = teams_map[g_id][raw]
+            tf = score['home'] if is_home else score['away']
+            ta = score['away'] if is_home else score['home']
+            t['played'] += 1; t['gf'] += tf; t['ga'] += ta
+            if tf > ta:   t['won']   += 1; t['pts'] += 3
+            elif tf == ta: t['drawn'] += 1; t['pts'] += 1
+            else:          t['lost']  += 1
+
+    groups = [
+        {'id': g, 'teams': sorted(list(tm.values()),
+                                   key=lambda x: (-x['pts'], -(x['gf']-x['ga']), -x['gf']))}
+        for g, tm in sorted(teams_map.items())
+    ]
+    return {
+        'groups':  groups  if groups  else None,
+        'matches': matches if matches else None,
+        'scorers': None,
+        'updatedAt': datetime.now(JST).strftime('%Y-%m-%d %H:%M JST'),
+        'source': 'ESPN',
+    }
+
+
+def fetch_espn_standings():
+    """Fetch group standings from ESPN standings API."""
+    url = 'https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings'
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=15)
+        if r.status_code != 200:
+            log(f"ESPN standings: HTTP {r.status_code}")
+            return None
+        children = r.json().get('children', [])
+        groups = []
+        for child in children:
+            gname = child.get('name', '')  # "Group A"
+            gm = re.search(r'Group ([A-L])', gname, re.I)
+            if not gm:
+                continue
+            g_id = gm.group(1).upper()
+            entries = child.get('standings', {}).get('entries', [])
+            teams = []
+            for e in entries:
+                team = e.get('team', {})
+                tname = team.get('displayName', '')
+                abbr  = team.get('abbreviation', '')
+                stats = {s['name']: s.get('displayValue', s.get('value', 0))
+                         for s in e.get('stats', []) if 'name' in s}
+                def sv(k):
+                    try: return int(float(stats.get(k, 0) or 0))
+                    except: return 0
+                teams.append({
+                    'name':   get_jp(tname),
+                    'flag':   get_flag(abbr),
+                    'played': sv('gamesPlayed'),
+                    'won':    sv('wins'),
+                    'drawn':  sv('ties'),
+                    'lost':   sv('losses'),
+                    'gf':     sv('pointsFor'),
+                    'ga':     sv('pointsAgainst'),
+                    'pts':    sv('points'),
+                })
+            if teams:
+                groups.append({'id': g_id, 'teams': teams})
+        log(f"ESPN standings: {len(groups)} groups")
+        return groups if groups else None
+    except Exception as e:
+        log(f"ESPN standings error: {e}")
+        return None
+
+
+# ── SofaScore fetch ───────────────────────────────────────────────────────────
+def fetch_sofascore():
+    """
+    Fetch WC2026 match results from SofaScore's unofficial API.
+    Fetches day-by-day from Jun 11 onward and collects FINISHED games.
+    """
+    results = []
+    seen = set()
+    today = datetime.now(JST).date()
+    start = datetime(2026, 6, 11).date()
+    days_done = (today - start).days + 1
+
+    for i in range(days_done):
+        d = start + timedelta(days=i)
+        url = f'https://www.sofascore.com/api/v1/sport/football/events/date/{d}'
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            if r.status_code != 200:
+                log(f"  SofaScore {d}: HTTP {r.status_code}")
+                continue
+            for ev in r.json().get('events', []):
+                # Filter for FIFA World Cup
+                tn = (ev.get('tournament', {})
+                        .get('uniqueTournament', {})
+                        .get('name', ''))
+                if 'World Cup' not in tn:
+                    continue
+                st = ev.get('status', {}).get('type', '')
+                if st != 'finished':
+                    continue
+                h = ev.get('homeTeam', {}).get('name', '')
+                a = ev.get('awayTeam', {}).get('name', '')
+                hs = ev.get('homeScore', {}).get('current')
+                as_ = ev.get('awayScore', {}).get('current')
+                if h and a and hs is not None and as_ is not None:
+                    key = (h.lower(), a.lower())
+                    if key not in seen:
+                        seen.add(key)
+                        results.append({
+                            'home': h, 'away': a,
+                            'homeScore': int(hs), 'awayScore': int(as_),
+                            'status': 'FINISHED',
+                        })
+        except Exception as e:
+            log(f"  SofaScore {d}: {e}")
+
+    log(f"SofaScore: {len(results)} finished matches")
+    return results
+
+
+def fetch_fotmob():
+    """
+    Fallback: Fotmob unofficial API for WC2026 results.
+    """
+    results = []
+    today_str = datetime.now(JST).strftime('%Y%m%d')
+    url = f'https://www.fotmob.com/api/matches?date={today_str}'
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        data = r.json()
+        for league in data.get('leagues', []):
+            if 'World Cup' not in league.get('name', ''):
+                continue
+            for m in league.get('matches', []):
+                if m.get('status', {}).get('finished') is not True:
+                    continue
+                h = m.get('home', {}).get('name', '')
+                a = m.get('away', {}).get('name', '')
+                hs = m.get('home', {}).get('score')
+                as_ = m.get('away', {}).get('score')
+                if h and a and hs is not None and as_ is not None:
+                    results.append({
+                        'home': h, 'away': a,
+                        'homeScore': int(hs), 'awayScore': int(as_),
+                        'status': 'FINISHED',
+                    })
+        log(f"Fotmob: {len(results)} finished matches")
+    except Exception as e:
+        log(f"Fotmob: {e}")
+    return results
+
+
+FIFA_CHANNEL_ID = 'UCpcTrCXblq78GZrTUTLWeBw'
+
+# Alternative English keywords for team name matching in video titles
+TEAM_TITLE_ALIASES = {
+    'South Korea':          ['korea', 'korea republic'],
+    'Bosnia-Herzegovina':   ['bosnia'],
+    'United States':        ['usa', 'united states'],
+    'Ivory Coast':          ['cote d', 'ivory coast'],
+    'DR Congo':             ['congo'],
+    'Czech Republic':       ['czechia', 'czech'],
+    'North Macedonia':      ['macedonia'],
+    'Trinidad and Tobago':  ['trinidad'],
+    'Saudi Arabia':         ['saudi'],
+    'New Zealand':          ['new zealand'],
+}
+
+def _team_words(name):
+    """Return a list of lowercase keywords to search for in a video title."""
+    name_l = name.lower()
+    aliases = TEAM_TITLE_ALIASES.get(name, [])
+    # Also add first word of team name as a fallback
+    first_word = name_l.split()[0]
+    return list({name_l, first_word} | set(aliases))
+
+
+def fetch_fifa_recent_videos(yt_key, max_videos=100):
+    """Fetch recent videos from FIFA official YouTube channel via uploads playlist.
+    Costs ~2 API units regardless of how many matches we need to cover."""
+    try:
+        # Get uploads playlist ID
+        r = requests.get('https://www.googleapis.com/youtube/v3/channels',
+                         params={'part': 'contentDetails', 'id': FIFA_CHANNEL_ID, 'key': yt_key},
+                         timeout=15)
+        playlist_id = r.json()['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+
+        videos, page_token = [], None
+        while len(videos) < max_videos:
+            params = {'part': 'snippet', 'playlistId': playlist_id,
+                      'maxResults': min(50, max_videos - len(videos)), 'key': yt_key}
+            if page_token:
+                params['pageToken'] = page_token
+            r = requests.get('https://www.googleapis.com/youtube/v3/playlistItems',
+                             params=params, timeout=15)
+            data = r.json()
+            for item in data.get('items', []):
+                snip = item['snippet']
+                vid_id = snip.get('resourceId', {}).get('videoId')
+                if vid_id:
+                    videos.append({'id': vid_id, 'title': snip['title'],
+                                   'thumb': snip['thumbnails'].get('medium', {}).get('url', '')})
+            page_token = data.get('nextPageToken')
+            if not page_token:
+                break
+        log(f"FIFA YouTube: fetched {len(videos)} recent videos")
+        return videos
+    except Exception as e:
+        log(f"FIFA YouTube fetch error: {e}")
+        return []
+
+
+def find_match_video(videos, h_name, a_name, mode='highlight'):
+    """Match a video from the FIFA channel list to a specific match.
+    mode='highlight': prefers 'Highlights |' prefix.
+    mode='preview':   prefers 'Preview', 'Match Preview', or 'Train Before' titles."""
+    h_kws = _team_words(h_name)
+    a_kws = _team_words(a_name)
+
+    def title_has(title_l, kws):
+        return any(k in title_l for k in kws)
+
+    # Score each video
+    scored = []
+    for v in videos:
+        tl = v['title'].lower()
+        if not (title_has(tl, h_kws) and title_has(tl, a_kws)):
+            continue
+        if mode == 'highlight':
+            score = 3 if tl.startswith('highlights |') else \
+                    2 if 'highlights' in tl else 1
+        else:
+            score = 3 if 'match preview' in tl else \
+                    2 if 'preview' in tl else \
+                    1 if ('train before' in tl or 'prepare' in tl) else 0
+        scored.append((score, v))
+
+    if not scored:
+        return []
+    scored.sort(key=lambda x: -x[0])
+    return [scored[0][1]]
+
+
+def merge_scores_into_espn(espn_data, ext_results, source_name):
+    """
+    Overlay external scores onto ESPN schedule data.
+    Matches by English team name reverse-mapped from JP.
+    """
+    if not espn_data.get('matches') or not ext_results:
+        return espn_data
+
+    # Build lookup by lowercase name
+    lookup = {}
+    for b in ext_results:
+        key = (b['home'].strip().lower(), b['away'].strip().lower())
+        lookup[key] = b
+
+    finished_count = 0
+    for m in espn_data['matches']:
+        h_en = next((k for k, v in TEAM_JP.items()
+                     if v == m['homeTeam']['name']), m['homeTeam']['name'])
+        a_en = next((k for k, v in TEAM_JP.items()
+                     if v == m['awayTeam']['name']), m['awayTeam']['name'])
+        b = lookup.get((h_en.lower(), a_en.lower()))
+        if b:
+            m['status'] = 'FINISHED'
+            m['score']  = {'home': b['homeScore'], 'away': b['awayScore']}
+            finished_count += 1
+
+    log(f"{source_name} merge: {finished_count} matches updated")
+    espn_data['source'] = f'ESPN+{source_name}'
+    return espn_data
+
+
+# ── ESPN match stats (shots / possession) ────────────────────────────────────
+def fetch_espn_match_stats(event_id):
+    """Fetch shot stats from ESPN event summary API for a single match."""
+    url = (f'https://site.api.espn.com/apis/site/v2/sports/soccer/'
+           f'fifa.world/summary?event={event_id}')
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        if r.status_code != 200:
+            return None
+        d = r.json()
+        boxscore = d.get('boxScore') or d.get('boxscore') or {}
+        teams = boxscore.get('teams') or boxscore.get('players') or []
+        if len(teams) < 2:
+            return None
+
+        def _stat(team_obj, key):
+            for s in (team_obj.get('statistics') or []):
+                if s.get('name') == key:
+                    try:
+                        return float(s.get('displayValue', 0) or 0)
+                    except Exception:
+                        return 0.0
+            return None
+
+        h, a = teams[0], teams[1]
+        result = {}
+        for api_key, out_h, out_a in [
+            ('shotsTotal',    'hShots',    'aShots'),
+            ('shotsOnTarget', 'hOnTarget', 'aOnTarget'),
+            ('possessionPct', 'hPoss',     'aPoss'),
+            ('totalPasses',   'hPasses',   'aPasses'),
+            ('accuratePasses','hAccPasses','aAccPasses'),
+        ]:
+            hv = _stat(h, api_key)
+            av = _stat(a, api_key)
+            if hv is not None or av is not None:
+                result[out_h] = hv or 0
+                result[out_a] = av or 0
+        return result if result else None
+    except Exception as e:
+        log(f'fetch_espn_match_stats({event_id}): {e}')
+        return None
+
+
+# ── HTML injection & Netlify deploy ───────────────────────────────────────────
+INJECT_MARKER = '/* __WC2026_LIVE_DATA__ */null'
+
+def inject_data(html: str, data: dict) -> str:
+    """Replace the marker in HTML with serialised live data."""
+    json_str = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+    replacement = f'/* __WC2026_LIVE_DATA__ */ {json_str}'
+    if INJECT_MARKER in html:
+        return html.replace(INJECT_MARKER, replacement, 1)
+    # Fallback
+    return html.replace(
+        '// ==================== INIT ====================',
+        f'var __WC2026_LIVE_DATA__={json_str};\n// ==================== INIT ====================',
+        1
+    )
+
+
+def deploy_to_github(html_content: str, token: str) -> bool:
+    """Commit index.html to GitHub Pages repo via API."""
+    import base64
+    url  = f'https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/index.html'
+    hdrs = {'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json'}
+    # Get current file SHA (required for updates)
+    sha = None
+    try:
+        r = requests.get(url, headers=hdrs, timeout=15)
+        if r.status_code == 200:
+            sha = r.json().get('sha')
+    except Exception as e:
+        log(f"GitHub SHA lookup error: {e}")
+
+    content_b64 = base64.b64encode(html_content.encode('utf-8')).decode()
+    payload = {
+        'message': f'Update dashboard {datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")}',
+        'content': content_b64,
+    }
+    if sha:
+        payload['sha'] = sha
+
+    try:
+        r = requests.put(url, headers=hdrs, json=payload, timeout=60)
+        if r.status_code in (200, 201):
+            page_url = f'https://{GITHUB_USER}.github.io/{GITHUB_REPO}/'
+            log(f"GitHub Pages deploy OK → {page_url}")
+            return True
+        else:
+            log(f"GitHub deploy FAILED {r.status_code}: {r.text[:300]}")
+            return False
+    except Exception as e:
+        log(f"GitHub deploy error: {e}")
+        return False
+
+
+
+# ── AI Analysis ──────────────────────────────────────────────────────────────
+def generate_ai_analysis(data, cfg):
+    """Call Claude API to generate AI analysis text; returns dict or None."""
+    anthropic_key = cfg.get('anthropic_key', '')
+    if not anthropic_key:
+        log("AI分析: anthropic_key not set in config. Skipping.")
+        return None
+
+    try:
+        import importlib
+        if importlib.util.find_spec('anthropic') is None:
+            log("AI分析: installing anthropic package...")
+            import subprocess
+            subprocess.run(
+                [sys.executable, '-m', 'pip', 'install', 'anthropic',
+                 '--break-system-packages', '-q'],
+                check=True
+            )
+        import anthropic
+    except Exception as e:
+        log(f"AI分析: anthropic import failed: {e}")
+        return None
+
+    # Build compact match summary for prompt
+    matches = data.get('matches') or []
+    groups  = data.get('groups') or []
+
+    finished = [m for m in matches if m.get('status') == 'FINISHED']
+    match_lines = []
+    for m in finished[-30:]:  # last 30 results
+        h = m['homeTeam']['name']
+        a = m['awayTeam']['name']
+        sc = m.get('score') or {}
+        match_lines.append(
+            f"  {h} {sc.get('home','?')}-{sc.get('away','?')} {a}"
+            f" (グループ{m.get('group','')})"
+        )
+
+    group_lines = []
+    for g in groups:
+        gid = g.get('id', '')
+        teams = g.get('teams') or []
+        row = ' / '.join(
+            f"{t.get('name','')}({t.get('pts',0)}pt)" for t in teams
+        )
+        group_lines.append(f"  グループ{gid}: {row}")
+
+    now_jst = datetime.now(JST).strftime('%Y-%m-%d %H:%M JST')
+
+    ctx = (
+        f"FIFA World Cup 2026 現在のデータ ({now_jst})\n\n"
+        f"【直近の試合結果】\n" + "\n".join(match_lines or ["データなし"]) + "\n\n"
+        f"【グループ順位表（暫定）】\n" + "\n".join(group_lines or ["データなし"])
+    )
+
+    prompts = {
+        'groupPrediction': (
+            "上記のデータをもとに、各グループ（A〜L）から突破が予想される上位2チームを"
+            "簡潔に予想してください。200字以内で。"
+        ),
+        'japanScenario': (
+            "上記のデータをもとに、日本代表がグループを突破するための"
+            "具体的なシナリオと必要な条件を150字以内で教えてください。"
+        ),
+        'winnerPrediction': (
+            "上記のデータをもとに、今大会の優勝国を1カ国予想し、"
+            "その理由を150字以内で説明してください。"
+        ),
+        'tacticalTrend': (
+            "上記のデータをもとに、今大会で見られる戦術トレンドや"
+            "特徴的な戦い方のパターンを150字以内で分析してください。"
+        ),
+    }
+
+    client = anthropic.Anthropic(api_key=anthropic_key)
+    result = {}
+    for key, question in prompts.items():
+        try:
+            resp = client.messages.create(
+                model='claude-haiku-4-5-20251001',
+                max_tokens=300,
+                messages=[{
+                    'role': 'user',
+                    'content': ctx + '\n\n' + question
+                }]
+            )
+            result[key] = resp.content[0].text.strip()
+            log(f"AI分析: {key} OK")
+        except Exception as e:
+            log(f"AI分析: {key} error: {e}")
+            result[key] = None
+
+    result['generatedAt'] = now_jst
+    return result
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+def main():
+    log("=== WC2026 Updater starting ===")
+    cfg = load_config()
+    token = cfg.get('github_token', '')
+
+    if not token:
+        # First run: ask for token
+        print("\nGitHub Personal Access Token を入力してください:")
+        print("(取得場所: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic))")
+        print("必要なスコープ: repo\n")
+        token = input("Token (ghp_...): ").strip()
+        if not token:
+            log("トークンなし。終了します。")
+            sys.exit(1)
+        cfg['github_token'] = token
+        save_config(cfg)
+        log("トークンを保存しました。")
+
+    yt_key = cfg.get('youtube_api_key', '')
+    if not yt_key:
+        print("\nYouTube Data API v3 キーを入力してください (スキップする場合はEnter):")
+        yt_key = input("YouTube API Key (AIza...): ").strip()
+        if yt_key:
+            cfg['youtube_api_key'] = yt_key
+            save_config(cfg)
+            log("YouTube APIキーを保存しました。")
+
+    # 1. Fetch ESPN schedule/scores
+    events = fetch_espn()
+    if not events:
+        log("ESPN: データなし。終了します。")
+        sys.exit(1)
+
+    # Build team→group map from standings for group-label fallback
+    team_to_group = {}
+    try:
+        r = requests.get('https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings',
+                         headers=HEADERS, timeout=15)
+        for child in r.json().get('children', []):
+            gm2 = re.search(r'Group ([A-L])', child.get('name', ''), re.I)
+            if gm2:
+                g_letter = gm2.group(1).upper()
+                for e in child.get('standings', {}).get('entries', []):
+                    tname = e.get('team', {}).get('displayName', '')
+                    if tname:
+                        team_to_group[tname] = g_letter
+        log(f"team_to_group: {len(team_to_group)} teams mapped")
+    except Exception as e:
+        log(f"team_to_group build failed: {e}")
+
+    data = transform_espn(events, team_to_group=team_to_group)
+
+    # Check if ESPN returned any FINISHED games
+    finished = [m for m in (data.get('matches') or []) if m['status'] == 'FINISHED']
+    log(f"ESPN finished games: {len(finished)}")
+
+    # 2. If ESPN has no finished games, try external score sources
+    if not finished:
+        log("ESPN にスコアなし → SofaScore を試します")
+        ext = fetch_sofascore()
+        if ext:
+            data = merge_scores_into_espn(data, ext, 'SofaScore')
+        else:
+            log("SofaScore にスコアなし → Fotmob を試します")
+            ext = fetch_fotmob()
+            if ext:
+                data = merge_scores_into_espn(data, ext, 'Fotmob')
+
+    # 2b. Fetch group standings from ESPN standings API
+    standings = fetch_espn_standings()
+    if standings:
+        data['groups'] = standings
+
+    # 2b2. Enrich FINISHED/LIVE matches with shot stats from ESPN event summary
+    stat_targets = [m for m in (data.get('matches') or [])
+                    if m['status'] in ('FINISHED', 'LIVE')]
+    log(f'Fetching shot stats for {len(stat_targets)} matches...')
+    for m in stat_targets:
+        ss = fetch_espn_match_stats(m['id'])
+        if ss:
+            m['shotStats'] = ss
+    log(f'Shot stats done.')
+
+    # 2c. Enrich matches with YouTube videos via FIFA channel playlist (costs ~2 API units total)
+    if yt_key:
+        yt_videos = fetch_fifa_recent_videos(yt_key, max_videos=100)
+        hl_count, pv_count = 0, 0
+        for m in (data.get('matches') or []):
+            h_en = next((k for k, v in TEAM_JP.items() if v == m['homeTeam']['name']), m['homeTeam']['name'])
+            a_en = next((k for k, v in TEAM_JP.items() if v == m['awayTeam']['name']), m['awayTeam']['name'])
+            if m['status'] == 'FINISHED':
+                vids = find_match_video(yt_videos, h_en, a_en, mode='highlight')
+                if vids:
+                    m['ytVideos'] = vids
+                    hl_count += 1
+                    log(f"  HL {h_en} vs {a_en}: {vids[0]['title'][:70].encode('ascii','replace').decode()}")
+            elif m['status'] == 'SCHEDULED':
+                vids = find_match_video(yt_videos, h_en, a_en, mode='preview')
+                if vids:
+                    m['ytVideos'] = vids
+                    pv_count += 1
+        log(f"YouTube matched: {hl_count} highlights, {pv_count} previews")
+
+    # 2d. Generate AI analysis via Claude API (requires anthropic_key in config)
+    ai_analysis = generate_ai_analysis(data, cfg)
+    if ai_analysis:
+        data['aiAnalysis'] = ai_analysis
+        log("AI分析: stored in data['aiAnalysis']")
+
+    log(f"Data ready: {len(data.get('matches') or [])} matches, "
+        f"{len(data.get('groups') or [])} groups, "
+        f"source={data.get('source')}, "
+        f"updated={data.get('updatedAt')}")
+
+    # 3. Read HTML template & inject data
+    if not HTML_TEMPLATE.exists():
+        log(f"HTML template not found: {HTML_TEMPLATE}")
+        log("Searching Cowork sessions for template...")
+        appdata = Path(os.environ.get('APPDATA', r'C:\Users\Shoichi\AppData\Roaming'))
+        # Try glob across all Cowork sessions
+        pattern = str(appdata / 'Claude' / 'local-agent-mode-sessions'
+                      / '*' / '*' / 'agent' / '*' / 'outputs'
+                      / 'worldcup2026_dashboard.html')
+        candidates = sorted(glob.glob(pattern),
+                            key=lambda p: os.path.getmtime(p), reverse=True)
+        # Also try direct known path from current Cowork session
+        direct = (appdata /
+                  r'Claude\local-agent-mode-sessions'
+                  r'\99e8f8bf-416a-4ed7-b904-0c7dbd762112'
+                  r'\bf3f4a76-830c-4697-adbc-8f7a9955e569'
+                  r'\agent'
+                  r'\local_ditto_bf3f4a76-830c-4697-adbc-8f7a9955e569'
+                  r'\outputs\worldcup2026_dashboard.html')
+        if direct.exists() and str(direct) not in candidates:
+            candidates.insert(0, str(direct))
+        if candidates:
+            src = Path(candidates[0])
+            shutil.copy(src, HTML_TEMPLATE)
+            log(f"Copied from {src}")
+        else:
+            log("HTML not found. Place worldcup2026_dashboard.html next to this script.")
+            sys.exit(1)
+
+    html = HTML_TEMPLATE.read_text(encoding='utf-8')
+    html_updated = inject_data(html, data)
+
+    # 4. Deploy to GitHub Pages
+    ok = deploy_to_github(html_updated, token)
+    if ok:
+        log("=== 完了 ===")
+    else:
+        log("=== デプロイ失敗 ===")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        log("中断されました")
+    except Exception:
+        log("予期しないエラー:\n" + traceback.format_exc())
+        sys.exit(1)

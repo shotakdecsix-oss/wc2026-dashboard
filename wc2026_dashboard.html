@@ -441,6 +441,7 @@
     <a class="sidenav-btn" href="#sec-tactics" onclick="openSection('sec-tactics')" title="戦術比較">🧠<span class="sidenav-label">戦術</span></a>
     <a class="sidenav-btn" href="#sec-bracket" onclick="openSection('sec-bracket')" title="トーナメント">🏆<span class="sidenav-label">トーナメント</span></a>
     <a class="sidenav-btn" href="#sec-map" onclick="openSection('sec-map');initMap()" title="地図">🗺<span class="sidenav-label">地図</span></a>
+    <a class="sidenav-btn" href="#sec-ai" onclick="openSection('sec-ai')" title="AI分析">🤖<span class="sidenav-label">AI</span></a>
   </nav>
 
 <div class="main">
@@ -594,6 +595,32 @@
       <p style="font-size:.74rem;color:var(--muted);margin-bottom:16px">※ FIFA公式レポート・各大会発表統計に基づく推計値です。</p>
       <div class="stats-grid" id="tactics-charts"></div>
       <div id="corr-analysis"></div>
+    </div>
+  </details>
+
+  <details id="sec-ai">
+    <summary><span class="sum-left">🤖 AI分析</span><span class="arrow">▼</span></summary>
+    <div class="section-body">
+      <div class="ai-section-intro">
+        <p class="ai-intro-text">試合結果をもとにClaude（Anthropic）が生成した分析です。更新スクリプト実行時に自動生成されます。</p>
+      </div>
+      <div class="ai-card" id="ai-group-prediction">
+        <div class="ai-card-title">🏆 グループ突破予想</div>
+        <div class="ai-card-body" id="ai-group-text">—</div>
+      </div>
+      <div class="ai-card" id="ai-japan-scenario">
+        <div class="ai-card-title">🇯🇵 日本代表グループ突破シナリオ</div>
+        <div class="ai-card-body" id="ai-japan-text">—</div>
+      </div>
+      <div class="ai-card" id="ai-winner-prediction">
+        <div class="ai-card-title">🥇 優勝国予想</div>
+        <div class="ai-card-body" id="ai-winner-text">—</div>
+      </div>
+      <div class="ai-card" id="ai-tactical-trend">
+        <div class="ai-card-title">⚽ 戦術トレンド分析</div>
+        <div class="ai-card-body" id="ai-tactical-text">—</div>
+      </div>
+      <div class="ai-updated" id="ai-updated-time"></div>
     </div>
   </details>
 
@@ -1837,6 +1864,17 @@ function renderConfPPG(matches) {
 }
 
 
+function renderAIAnalysis(ai) {
+  if (!ai) return;
+  var set = function(id, val) { var el = document.getElementById(id); if (el && val) el.textContent = val; };
+  set('ai-group-text', ai.groupPrediction);
+  set('ai-japan-text', ai.japanScenario);
+  set('ai-winner-text', ai.winnerPrediction);
+  set('ai-tactical-text', ai.tacticalTrend);
+  var upd = document.getElementById('ai-updated-time');
+  if (upd && ai.generatedAt) upd.textContent = '生成日時: ' + ai.generatedAt;
+}
+
 function renderAll(data){
   renderConfPPG(data.matches);
 
@@ -1851,6 +1889,7 @@ function renderAll(data){
   renderCorrelationAnalysis((data&&data.matches)||[]);
   renderCountdown(data);
   renderBracket(data);
+  renderAIAnalysis(data && data.aiAnalysis);
   var lu=document.getElementById('last-updated');
   if(lu&&data&&data.updatedAt)lu.textContent='更新: '+data.updatedAt;
   // Re-populate xG placeholders after DOM rebuild
