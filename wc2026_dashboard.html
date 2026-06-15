@@ -372,6 +372,12 @@
   .conf-band-seg { font-size: 9px; }
 }
 
+
+    /* REFERENCE LINKS */
+    .ref-links{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;margin-bottom:12px;}
+    .ref-links-label{font-size:11px;color:#888;}
+    .ref-link{font-size:11px;color:#4ecdc4;text-decoration:none;background:#1a2a3a;padding:2px 8px;border-radius:12px;border:1px solid #2a3a4a;}
+    .ref-link:hover{background:#2a3a4a;color:#7eddd8;}
 </style>
 </head>
 <body>
@@ -555,6 +561,7 @@
 
     <summary><span class="sum-left">📈 スタッツ</span><span class="arrow">▼</span></summary>
     <div class="section-body">
+      <div class="ref-links"><span class="ref-links-label">参考：</span><a href="https://fbref.com/en/comps/1/World-Cup-Stats" class="ref-link" target="_blank">FBref</a><a href="https://www.sofascore.com/tournament/football/world/fifa-world-cup/16" class="ref-link" target="_blank">SofaScore</a><a href="https://www.whoscored.com" class="ref-link" target="_blank">WhoScored / Opta</a></div>
       <p style="font-size:.74rem;color:var(--muted);margin-bottom:16px">※ FIFAランキング・グループ組み合わせに基づくデータです。</p>
       <div class="stats-grid">
         <div class="chart-card"><div class="card-title">🌍 大陸別出場チーム数</div><div id="continentChart"></div></div>
@@ -569,6 +576,7 @@
 
     <summary><span class="sum-left">🧠 戦術比較分析</span><span class="arrow">▼</span></summary>
     <div class="section-body">
+      <div class="ref-links"><span class="ref-links-label">参考：</span><a href="https://statsbomb.com/articles/" class="ref-link" target="_blank">StatsBomb</a><a href="https://theathletic.com/football/world-cup/" class="ref-link" target="_blank">The Athletic</a><a href="https://www.espn.com/soccer/stats" class="ref-link" target="_blank">ESPN Analytics</a><a href="https://github.com/statsbomb/open-data" class="ref-link" target="_blank">StatsBomb Open Data</a></div>
       <p style="font-size:.74rem;color:var(--muted);margin-bottom:16px">※ FIFA公式レポート・各大会発表統計に基づく推計値です。</p>
       <div class="stats-grid" id="tactics-charts"></div>
       <div id="corr-analysis"></div>
