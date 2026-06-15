@@ -365,6 +365,13 @@
 .conf-band-legend-item{display:flex;align-items:center;gap:4px;font-size:11px;color:#aaa;}
 .conf-band-legend-sq{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
 
+
+@media (max-width: 600px) {
+  .conf-band-label { width: 90px; font-size: 10px; }
+  .conf-band-bar { height: 28px; }
+  .conf-band-seg { font-size: 9px; }
+}
+
 </style>
 </head>
 <body>
@@ -1764,7 +1771,7 @@ function renderConfPPG(matches) {
     if (total === 0) return '<div style="color:#555;font-size:11px;padding:8px;">データなし</div>';
     return entries.map(e => {
       const pct = (e.ppg/total*100);
-      const label = pct >= 10 ? e.c+' ('+e.ppg.toFixed(2)+')' : (pct >= 6 ? e.c : '');
+      const label = pct >= 12 ? e.ppg.toFixed(2) : '';
       return '<div class="conf-band-seg" style="width:'+pct.toFixed(2)+'%;background:'+CONF_COLORS[e.c]+';" title="'+e.c+': '+e.ppg.toFixed(2)+' pts/game">'+label+'</div>';
     }).join('');
   }
