@@ -514,26 +514,27 @@ def fetch_espn_match_stats(event_id):
         if len(teams) < 2:
             return None
 
-        def _stat(team_obj, key):
-            for s in (team_obj.get('statistics') or []):
-                if s.get('name') == key:
-                    try:
-                        return float(s.get('displayValue', 0) or 0)
-                    except Exception:
-                        return 0.0
+        def _stat(team_obj, *keys):
+            for key in keys:
+                for s in (team_obj.get('statistics') or []):
+                    if s.get('name') == key:
+                        try:
+                            return float(s.get('displayValue', 0) or 0)
+                        except Exception:
+                            return 0.0
             return None
 
         h, a = teams[0], teams[1]
         result = {}
-        for api_key, out_h, out_a in [
-            ('shotsTotal',    'hShots',    'aShots'),
-            ('shotsOnTarget', 'hOnTarget', 'aOnTarget'),
-            ('possessionPct', 'hPoss',     'aPoss'),
-            ('totalPasses',   'hPasses',   'aPasses'),
-            ('accuratePasses','hAccPasses','aAccPasses'),
+        for keys, out_h, out_a in [
+            (('shotsTotal','totalShots','shots'),                        'hShots',    'aShots'),
+            (('shotsOnTarget','onTargetShotsTotal','shotsOnGoal'),       'hOnTarget', 'aOnTarget'),
+            (('possessionPct','possession'),                             'hPoss',     'aPoss'),
+            (('totalPasses','passes','passAttempts','totalPassAttempts'),'hPasses',   'aPasses'),
+            (('accuratePasses','passesAccurate'),                        'hAccPasses','aAccPasses'),
         ]:
-            hv = _stat(h, api_key)
-            av = _stat(a, api_key)
+            hv = _stat(h, *keys)
+            av = _stat(a, *keys)
             if hv is not None or av is not None:
                 result[out_h] = hv or 0
                 result[out_a] = av or 0
@@ -700,6 +701,38 @@ def generate_ai_analysis(data, cfg):
     )
 
     # ── Build shared context string ───────────────────────────────────────────
+    WC_HISTORY = """
+### 過去ワールドカップ優勝実績
+- ブラジル: 5回優勝 (1958, 62, 70, 94, 2002) — 最多優勝国
+- ドイツ: 4回 (1954, 74, 90, 2014)
+- イタリア: 4回 (1934, 38, 82, 2006)
+- アルゼンチン: 3回 (1978, 86, 2022) — 前回王者
+- フランス: 2回 (1998, 2018)
+- ウルグアイ: 2回 (1930, 50)
+- イングランド: 1回 (1966)
+- スペイン: 1回 (2010)
+- 日本: ベスト16 (2002, 10, 22)、グループ突破７回
+
+### 中心選手と注目点（2026年時点）
+- メッシ（アルゼンチン）: 38歳、前回大会MVP、コンディションが鍵
+- エムバペ（フランス）: 27歳、絶対的エース、スペインへ移籍後初W杯
+- ロナウド（ポルトガル）: 41歳、サウジリーグ。体力面に疑問符
+- ヴィニシウス（ブラジル）: 25歳、世界最高レベルのドリブラー
+- ベリンガム（イングランド）: 22歳、レアルで急成長
+- ラッシュフォード（イングランド）: 怪我明け
+- 久保建英（日本）: バルセロナで台頭、攻撃の軸
+- 前田大然（日本）: スプリント能力、チェイシングの要
+- サカ（イングランド）: アーセナルの主力、安定したパフォーマンス
+- ムシアラ（ドイツ）: 21歳、バイエルンでの活躍継続
+
+### WC2026大会形式
+- 12グループ（A～L）× 4チーム = 48チーム
+- 各グループ1位・2位(24チーム) + グループ3位上位8チーム → ラウンド32
+- グループ4位(12チーム)は全員敗退確定
+- グループ3位12チームのうち、成績下位4チームが敗退
+- 3位同士の比較基準: 勝ち点 → 得失点差 → 総得点
+"""
+
     context = f"""## WC2026 現況データ（{now_jst}時点）
 
 ### 直近の試合結果（最新10試合）
@@ -713,30 +746,49 @@ def generate_ai_analysis(data, cfg):
 
 ### スタッツ傾向
 {stats_summary}
+
+{WC_HISTORY}
 """
 
     # ── Prompts ───────────────────────────────────────────────────────────────
     prompts = {
-        'groupPrediction': (
+        'groupPrediction1': (
             context
             + "\n## タスク\n"
-            "上記データをもとに、グループA〜Lから突破が予想される上位2チームを予想してください。\n"
-            "FIFAランキングや直近の試合結果を根拠に、**具体的なチーム名と理由**を挙げてください。\n"
-            "回答は250字以内で日本語で。箇条書き（- ）を使い、**キーワード**は太字で。"
+            "グループA〜Fについて以下を予想:\n"
+            "1. 1位・2位（自動突破）\n"
+            "2. 3位（3位争いに参加）\n"
+            "3. 4位（確実に敗退）と敗退理由\n\n"
+            "現在の大会結果データを最大限活用し、まだ終了していないグループは現時点の試合結果から傾向を分析して予想してください。"
+            "回答は500字以内で日本語で。箇条書き（- ）を使い、**キーワード**は太字で。"
+        ),
+        'groupPrediction2': (
+            context
+            + "\n## タスク\n"
+            "グループG〜Lについて以下を予想:\n"
+            "1. 1位・2位（自動突破）\n"
+            "2. 3位（3位争いに参加）\n"
+            "3. 4位（確実に敗退）と敗退理由\n\n"
+            "また、12グループ全体の3位チームの中で、グループステージ敗退となる下位4チームを予想し、その理由（勝ち点・得失点差の観点から）も述べてください。\n\n"
+            "現在の大会結果データを最大限活用し、まだ終了していないグループは現時点の試合結果から傾向を分析して予想してください。"
+            "回答は500字以内で日本語で。箇条書き（- ）を使い、**キーワード**は太字で。"
         ),
         'japanScenario': (
             context
             + "\n## タスク\n"
             "日本代表（FIFAランク18位）がグループを突破するための**具体的シナリオ**を分析してください。\n"
+            "久保建英、前田大然、遠藤航などの主力選手の状態と、日本のグループ突破に必要な条件を具体的に分析してください。\n"
             "直近の試合結果とグループ内の対戦相手のランキングを踏まえ、\n"
-            "必要勝ち点・有利な点・リスクを明示してください。200字以内で日本語で。"
+            "必要勝ち点・有利な点・リスクを明示してください。250字以内で日本語で。"
         ),
         'winnerPrediction': (
             context
             + "\n## タスク\n"
-            "上記データをもとに、今大会の**優勝国を1カ国**予想してください。\n"
-            "FIFAランキング、直近の試合内容、グループ首位通過の可能性を根拠に、\n"
-            "理由を具体的に説明してください。200字以内で日本語で。"
+            "優勝候補トップ3と、その根拠（FIFAランキング・WC実績・中心選手の調子・大会での戦績）を挙げてください。\n"
+            "また、ダークホース（穴場）として注目すべきチームも1-2カ国挙げてください。\n"
+            "早期敗退が予想されるランク上位国とその理由も記載してください。\n"
+            "特にランキング上位ながら早期敗退（グループステージ敗退）が想定されるチームとその理由も明記してください。\n"
+            "300字以内で日本語で。"
         ),
         'tacticalTrend': (
             context
@@ -753,7 +805,7 @@ def generate_ai_analysis(data, cfg):
         try:
             resp = client.messages.create(
                 model='claude-haiku-4-5-20251001',
-                max_tokens=400,
+                max_tokens=500,
                 messages=[{'role': 'user', 'content': prompt}]
             )
             result[key] = resp.content[0].text.strip()

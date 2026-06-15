@@ -636,10 +636,17 @@
             <div class="ai-section-wrap">
         <div class="ai-card" id="ai-group-prediction" style="--ai-accent:#e67e22">
           <div class="ai-card-header">
-            <div class="ai-card-title">🏆 グループ突破予想</div>
+            <div class="ai-card-title">🏆 グループ突破予想 A〜F</div>
             <span class="ai-badge">AI generated</span>
           </div>
           <div class="ai-card-body" id="ai-group-text"> </div>
+        </div>
+        <div class="ai-card" style="--ai-accent:#e67e22" id="ai-group2-prediction">
+          <div class="ai-card-header">
+            <div class="ai-card-title">🏆 グループ突破予想 G〜L</div>
+            <span class="ai-badge">AI generated</span>
+          </div>
+          <div class="ai-card-body" id="ai-group2-text">—</div>
         </div>
         <div class="ai-card" id="ai-japan-scenario" style="--ai-accent:#3498db">
           <div class="ai-card-header">
@@ -1604,7 +1611,18 @@ function renderTactics(){
           var aPoss=getStat(aStats,['possessionPct','possession','possessionPercentage','totalPossession']);
           var hPas=getStat(hStats,['totalPasses','passes','passingTotal','passAttempts','totalPassAttempts']);
           var aPas=getStat(aStats,['totalPasses','passes','passingTotal','passAttempts','totalPassAttempts']);
-          m.shotStats={hPoss:hPoss,aPoss:aPoss,hPasses:hPas,aPasses:aPas};
+          var hSh=getStat(hStats,['totalShots','shots','shotsTotal']);
+          var aSh=getStat(aStats,['totalShots','shots','shotsTotal']);
+          var hOt=getStat(hStats,['shotsOnTarget','onTargetShotsTotal','shotsOnGoal']);
+          var aOt=getStat(aStats,['shotsOnTarget','onTargetShotsTotal','shotsOnGoal']);
+          var _ss=m.shotStats||{};
+          if(hPoss!==null)_ss.hPoss=hPoss;
+          if(aPoss!==null)_ss.aPoss=aPoss;
+          if(hPas!==null)_ss.hPasses=hPas;
+          if(aPas!==null)_ss.aPasses=aPas;
+          if(hSh!==null||aSh!==null){_ss.hShots=hSh||0;_ss.aShots=aSh||0;}
+          if(hOt!==null||aOt!==null){_ss.hOnTarget=hOt||0;_ss.aOnTarget=aOt||0;}
+          m.shotStats=_ss;
         }
         finalize();
       })
@@ -1931,7 +1949,8 @@ function renderAIAnalysis(ai) {
     var el = document.getElementById(id);
     if (el && val) el.innerHTML = parseAiText(val);
   };
-  set('ai-group-text', ai.groupPrediction);
+  set('ai-group-text', ai.groupPrediction1);
+  set('ai-group2-text', ai.groupPrediction2);
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
