@@ -621,68 +621,140 @@ def generate_ai_analysis(data, cfg):
         log(f"AI分析: anthropic import failed: {e}")
         return None
 
-    # Build compact match summary for prompt
-    matches = data.get('matches') or []
-    groups  = data.get('groups') or []
-
-    finished = [m for m in matches if m.get('status') == 'FINISHED']
-    match_lines = []
-    for m in finished[-30:]:  # last 30 results
-        h = m['homeTeam']['name']
-        a = m['awayTeam']['name']
-        sc = m.get('score') or {}
-        match_lines.append(
-            f"  {h} {sc.get('home','?')}-{sc.get('away','?')} {a}"
-            f" (グループ{m.get('group','')})"
-        )
-
-    group_lines = []
-    for g in groups:
-        gid = g.get('id', '')
-        teams = g.get('teams') or []
-        row = ' / '.join(
-            f"{t.get('name','')}({t.get('pts',0)}pt)" for t in teams
-        )
-        group_lines.append(f"  グループ{gid}: {row}")
+    matches  = data.get('matches') or []
+    groups   = data.get('groups') or []
+    standings = data.get('standings') or []
 
     now_jst = datetime.now(JST).strftime('%Y-%m-%d %H:%M JST')
 
-    ctx = (
-        f"FIFA World Cup 2026 現在のデータ ({now_jst})\n\n"
-        f"【直近の試合結果】\n" + "\n".join(match_lines or ["データなし"]) + "\n\n"
-        f"【グループ順位表（暫定）】\n" + "\n".join(group_lines or ["データなし"])
+    # ── Recent finished matches (last 10) ────────────────────────────────────
+    finished = [m for m in matches if m.get('status') == 'FINISHED']
+    finished_sorted = sorted(
+        finished,
+        key=lambda m: m.get('utcDate', ''),
+        reverse=True
+    )
+    recent_lines = []
+    for m in finished_sorted[:10]:
+        h  = m.get('homeTeam', {}).get('name', '?')
+        a  = m.get('awayTeam', {}).get('name', '?')
+        sc = m.get('score') or {}
+        hs = sc.get('home', '?')
+        as_ = sc.get('away', '?')
+        grp = m.get('group', '')
+        date = m.get('utcDate', '')[:10]
+        recent_lines.append(f"  {h} {hs}-{as_} {a}  (グループ{grp} / {date})")
+    recent_matches_text = '\n'.join(recent_lines) if recent_lines else '  データなし'
+
+    # ── Group standings ───────────────────────────────────────────────────────
+    group_standing_lines = []
+    # Prefer explicit standings data; fall back to groups array
+    if standings:
+        for grp in standings:
+            gid  = grp.get('group', grp.get('id', ''))
+            rows = grp.get('table') or grp.get('teams') or []
+            cols = []
+            for t in rows:
+                name = t.get('team', {}).get('name', '') or t.get('name', '')
+                pts  = t.get('points', t.get('pts', 0))
+                gf   = t.get('goalsFor', t.get('gf', 0))
+                ga   = t.get('goalsAgainst', t.get('ga', 0))
+                cols.append(f"{name}({pts}pt {gf}-{ga})")
+            group_standing_lines.append(f"  グループ{gid}: " + ' / '.join(cols))
+    elif groups:
+        for g in groups:
+            gid   = g.get('id', '')
+            teams = g.get('teams') or []
+            cols  = [
+                f"{t.get('name','')}({t.get('pts',0)}pt)"
+                for t in teams
+            ]
+            group_standing_lines.append(f"  グループ{gid}: " + ' / '.join(cols))
+    group_standings_text = '\n'.join(group_standing_lines) if group_standing_lines else '  データなし'
+
+    # ── Stats summary (shots / possession) ───────────────────────────────────
+    total_goals = sum(
+        (m.get('score') or {}).get('home', 0) or 0
+        + (m.get('score') or {}).get('away', 0) or 0
+        for m in finished
+    )
+    stats_lines = []
+    if finished:
+        stats_lines.append(f"  完了試合数: {len(finished)}")
+        stats_lines.append(f"  総得点: {total_goals}  (平均 {total_goals/len(finished):.2f}点/試合)")
+    # Shot/possession data (if available in match objects)
+    shots_data = [
+        m for m in finished
+        if m.get('stats') or m.get('homeShots') is not None
+    ]
+    if shots_data:
+        stats_lines.append(f"  スタッツ付き試合: {len(shots_data)}件")
+    stats_summary = '\n'.join(stats_lines) if stats_lines else '  詳細スタッツ未取得'
+
+    # ── FIFA Rankings (June 2026) ─────────────────────────────────────────────
+    FIFA_RANKS_TEXT = (
+        "アルゼンチン1位、スペイン2位、フランス3位、イングランド4位、"
+        "ポルトガル5位、ブラジル6位、モロッコ7位、オランダ8位、"
+        "コロンビア9位、ドイツ10位、クロアチア12位、メキシコ13位、"
+        "アメリカ16位、日本18位、カナダ19位、韓国22位、セネガル23位"
     )
 
+    # ── Build shared context string ───────────────────────────────────────────
+    context = f"""## WC2026 現況データ（{now_jst}時点）
+
+### 直近の試合結果（最新10試合）
+{recent_matches_text}
+
+### グループ別順位（暫定）
+{group_standings_text}
+
+### 主要チームFIFAランキング（2026年6月時点）
+{FIFA_RANKS_TEXT}
+
+### スタッツ傾向
+{stats_summary}
+"""
+
+    # ── Prompts ───────────────────────────────────────────────────────────────
     prompts = {
         'groupPrediction': (
-            "上記のデータをもとに、各グループ（A〜L）から突破が予想される上位2チームを"
-            "簡潔に予想してください。200字以内で。"
+            context
+            + "\n## タスク\n"
+            "上記データをもとに、グループA〜Lから突破が予想される上位2チームを予想してください。\n"
+            "FIFAランキングや直近の試合結果を根拠に、**具体的なチーム名と理由**を挙げてください。\n"
+            "回答は250字以内で日本語で。箇条書き（- ）を使い、**キーワード**は太字で。"
         ),
         'japanScenario': (
-            "上記のデータをもとに、日本代表がグループを突破するための"
-            "具体的なシナリオと必要な条件を150字以内で教えてください。"
+            context
+            + "\n## タスク\n"
+            "日本代表（FIFAランク18位）がグループを突破するための**具体的シナリオ**を分析してください。\n"
+            "直近の試合結果とグループ内の対戦相手のランキングを踏まえ、\n"
+            "必要勝ち点・有利な点・リスクを明示してください。200字以内で日本語で。"
         ),
         'winnerPrediction': (
-            "上記のデータをもとに、今大会の優勝国を1カ国予想し、"
-            "その理由を150字以内で説明してください。"
+            context
+            + "\n## タスク\n"
+            "上記データをもとに、今大会の**優勝国を1カ国**予想してください。\n"
+            "FIFAランキング、直近の試合内容、グループ首位通過の可能性を根拠に、\n"
+            "理由を具体的に説明してください。200字以内で日本語で。"
         ),
         'tacticalTrend': (
-            "上記のデータをもとに、今大会で見られる戦術トレンドや"
-            "特徴的な戦い方のパターンを150字以内で分析してください。"
+            context
+            + "\n## タスク\n"
+            "今大会で見られる**戦術トレンドや特徴的なパターン**を分析してください。\n"
+            "得点傾向、守備組織、プレッシング強度など、直近の試合結果から読み取れる\n"
+            "具体的なデータと傾向を挙げてください。200字以内で日本語で。"
         ),
     }
 
     client = anthropic.Anthropic(api_key=anthropic_key)
     result = {}
-    for key, question in prompts.items():
+    for key, prompt in prompts.items():
         try:
             resp = client.messages.create(
                 model='claude-haiku-4-5-20251001',
-                max_tokens=300,
-                messages=[{
-                    'role': 'user',
-                    'content': ctx + '\n\n' + question
-                }]
+                max_tokens=400,
+                messages=[{'role': 'user', 'content': prompt}]
             )
             result[key] = resp.content[0].text.strip()
             log(f"AI分析: {key} OK")
@@ -692,6 +764,7 @@ def generate_ai_analysis(data, cfg):
 
     result['generatedAt'] = now_jst
     return result
+
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

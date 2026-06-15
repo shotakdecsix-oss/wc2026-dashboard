@@ -392,6 +392,35 @@
 .data-sources-footer a:hover{color:#4ecdc4;}
 .data-sources-footer strong{color:#666;}
 
+
+/* ── AI Analysis Cards ──────────────────────────────────────────────── */
+.ai-section-wrap { padding: 4px 0; }
+.ai-card {
+  background: linear-gradient(135deg, #0d1f2d 80%, #102030 100%);
+  border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  border-left: 4px solid var(--ai-accent, #4ecdc4);
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.ai-card-header {
+  display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 10px;
+}
+.ai-card-title { font-size: 14px; font-weight: 700; color: var(--ai-accent, #4ecdc4); }
+.ai-badge {
+  font-size: 9px; background: #1a2a3a; color: #666;
+  padding: 2px 6px; border-radius: 10px; white-space: nowrap;
+}
+.ai-card-body { font-size: 12px; color: #bbb; line-height: 1.8; }
+.ai-card-body strong { color: #ddd; }
+.ai-card-body ul { margin: 4px 0; padding-left: 16px; }
+.ai-card-body li { margin-bottom: 3px; }
+.ai-footer {
+  display: flex; justify-content: flex-end;
+  margin-top: 20px; padding-top: 10px;
+  border-top: 1px solid #1a2a3a;
+  font-size: 10px; color: #555;
+}
+
 </style>
 </head>
 <body>
@@ -604,23 +633,39 @@
       <div class="ai-section-intro">
         <p class="ai-intro-text">試合結果をもとにClaude（Anthropic）が生成した分析です。更新スクリプト実行時に自動生成されます。</p>
       </div>
-      <div class="ai-card" id="ai-group-prediction">
-        <div class="ai-card-title">🏆 グループ突破予想</div>
-        <div class="ai-card-body" id="ai-group-text">—</div>
+            <div class="ai-section-wrap">
+        <div class="ai-card" id="ai-group-prediction" style="--ai-accent:#e67e22">
+          <div class="ai-card-header">
+            <div class="ai-card-title">🏆 グループ突破予想</div>
+            <span class="ai-badge">AI generated</span>
+          </div>
+          <div class="ai-card-body" id="ai-group-text"> </div>
+        </div>
+        <div class="ai-card" id="ai-japan-scenario" style="--ai-accent:#3498db">
+          <div class="ai-card-header">
+            <div class="ai-card-title">🗾 日本代表グループ突破シナリオ</div>
+            <span class="ai-badge">AI generated</span>
+          </div>
+          <div class="ai-card-body" id="ai-japan-text"> </div>
+        </div>
+        <div class="ai-card" id="ai-winner-prediction" style="--ai-accent:#f1c40f">
+          <div class="ai-card-header">
+            <div class="ai-card-title">🥇 優勝国予想</div>
+            <span class="ai-badge">AI generated</span>
+          </div>
+          <div class="ai-card-body" id="ai-winner-text"> </div>
+        </div>
+        <div class="ai-card" id="ai-tactical-trend" style="--ai-accent:#9b59b6">
+          <div class="ai-card-header">
+            <div class="ai-card-title">⚽ 戦術トレンド分析</div>
+            <span class="ai-badge">AI generated</span>
+          </div>
+          <div class="ai-card-body" id="ai-tactical-text"> </div>
+        </div>
+        <div class="ai-footer">
+          <span id="ai-updated-time"></span>
+        </div>
       </div>
-      <div class="ai-card" id="ai-japan-scenario">
-        <div class="ai-card-title">🇯🇵 日本代表グループ突破シナリオ</div>
-        <div class="ai-card-body" id="ai-japan-text">—</div>
-      </div>
-      <div class="ai-card" id="ai-winner-prediction">
-        <div class="ai-card-title">🥇 優勝国予想</div>
-        <div class="ai-card-body" id="ai-winner-text">—</div>
-      </div>
-      <div class="ai-card" id="ai-tactical-trend">
-        <div class="ai-card-title">⚽ 戦術トレンド分析</div>
-        <div class="ai-card-body" id="ai-tactical-text">—</div>
-      </div>
-      <div class="ai-updated" id="ai-updated-time"></div>
     </div>
   </details>
 
@@ -1864,15 +1909,34 @@ function renderConfPPG(matches) {
 }
 
 
+function parseAiText(txt) {
+  if (!txt) return '—';
+  // bold
+  txt = txt.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  // list items → collect consecutive <li> into <ul>
+  txt = txt.replace(/^[-・] (.+)$/gm, '<li>$1</li>');
+  txt = txt.replace(/(<li>[\s\S]*?<\/li>)(\n|$)/g, function(m){ return m; });
+  // wrap consecutive li blocks in ul
+  txt = txt.replace(/(<li>(?:.|\n)*?<\/li>\n?)+/g, function(block){
+    return '<ul>' + block + '</ul>';
+  });
+  // line breaks (but not inside tags)
+  txt = txt.replace(/\n(?!<)/g, '<br>');
+  return txt;
+}
+
 function renderAIAnalysis(ai) {
   if (!ai) return;
-  var set = function(id, val) { var el = document.getElementById(id); if (el && val) el.textContent = val; };
+  var set = function(id, val) {
+    var el = document.getElementById(id);
+    if (el && val) el.innerHTML = parseAiText(val);
+  };
   set('ai-group-text', ai.groupPrediction);
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
   var upd = document.getElementById('ai-updated-time');
-  if (upd && ai.generatedAt) upd.textContent = '生成日時: ' + ai.generatedAt;
+  if (upd && ai.generatedAt) upd.textContent = '最終更新: ' + ai.generatedAt;
 }
 
 function renderAll(data){
