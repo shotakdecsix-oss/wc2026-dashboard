@@ -533,6 +533,8 @@
   </details>
 
   <details id="sec-stats">
+<div id="conf-ppg" class="conf-ppg-wrap"></div>
+
     <summary><span class="sum-left">📈 スタッツ</span><span class="arrow">▼</span></summary>
     <div class="section-body">
       <p style="font-size:.74rem;color:var(--muted);margin-bottom:16px">※ FIFAランキング・グループ組み合わせに基づくデータです。</p>
@@ -546,7 +548,6 @@
   </details>
 
   <details id="sec-tactics">
-<div id="conf-ppg" class="conf-ppg-wrap"></div>
 
     <summary><span class="sum-left">🧠 戦術比較分析</span><span class="arrow">▼</span></summary>
     <div class="section-body">
@@ -1717,9 +1718,9 @@ function renderConfPPG(matches) {
   if (!el) return;
   const CONFS = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
   const TOURNAMENTS = [
-    { key:'WC2018', label:'WC2018', color:'#9b59b6', data: HIST_CONF_PPG['WC2018'] },
-    { key:'WC2022', label:'WC2022', color:'#3498db', data: HIST_CONF_PPG['WC2022'] },
-    { key:'WC2026', label:'WC2026', color:'#4ecdc4', data: null }
+    { key:'WC2018', label:'WC2018 (ロシア)', color:'#9b59b6', data: HIST_CONF_PPG['WC2018'] },
+    { key:'WC2022', label:'WC2022 (カタール)', color:'#3498db', data: HIST_CONF_PPG['WC2022'] },
+    { key:'WC2026', label:'WC2026 (米・加・墨)', color:'#4ecdc4', data: null }
   ];
 
   // Compute WC2026 live
