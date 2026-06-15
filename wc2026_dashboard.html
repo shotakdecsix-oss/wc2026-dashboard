@@ -1704,41 +1704,97 @@ const TEAM_CONF = {
   'Uzbekistan':'AFC','Bahrain':'AFC',
   'New Zealand':'OFC'
 };
+const HIST_CONF_PPG = {
+  'WC2018': {"AFC": 0.9375, "CAF": 0.7333, "CONCACAF": 0.7, "CONMEBOL": 1.7143, "UEFA": 1.6667},
+  'WC2022': {"AFC": 1.0952, "CAF": 1.4, "CONCACAF": 0.9231, "CONMEBOL": 1.7778, "UEFA": 1.4643},
+};
+
 
 function renderConfPPG(matches) {
-  const el = document.getElementById('conf-ppg');
+  var el = document.getElementById('conf-ppg');
   if (!el) return;
-  const CONFS = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
-  const d = {};
-  CONFS.forEach(c => { d[c] = {pts:0, g:0}; });
-  (matches||[]).forEach(m => {
-    const st = (m.status||'').toUpperCase();
+  var CONFS = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
+
+  // Compute WC2026 live PPG
+  var d2026 = {};
+  CONFS.forEach(function(c){ d2026[c]={pts:0,g:0}; });
+  (matches||[]).forEach(function(m) {
+    var st = (m.status||'').toUpperCase();
     if (!st.includes('FULL') && !st.includes('FT') && st !== 'STATUS_FINAL' && st !== 'FINAL' && st !== 'FINISHED') return;
-    const hs = parseInt(m.homeScore!=null?m.homeScore:(m.score&&m.score.home))||0, as2 = parseInt(m.awayScore!=null?m.awayScore:(m.score&&m.score.away))||0;
-    const hPts = hs>as2?3:hs===as2?1:0;
-    const aPts = as2>hs?3:as2===hs?1:0;
-    const lookup = name => { if(!name) return null; if(TEAM_CONF[name]) return TEAM_CONF[name]; var en=Object.keys(TEAM_JP).find(function(k){return TEAM_JP[k]===name;}); return en?TEAM_CONF[en]:null; };
-    const hName = m.homeTeamEn||(typeof m.homeTeam==='string'?m.homeTeam:(m.homeTeam&&m.homeTeam.name))||'';
-    const aName = m.awayTeamEn||(typeof m.awayTeam==='string'?m.awayTeam:(m.awayTeam&&m.awayTeam.name))||'';
-    const hc = lookup(hName);
-    const ac = lookup(aName);
-    if (hc && d[hc]) { d[hc].pts+=hPts; d[hc].g++; }
-    if (ac && d[ac]) { d[ac].pts+=aPts; d[ac].g++; }
+    var hs = parseInt(m.homeScore!=null?m.homeScore:(m.score&&m.score.home))||0;
+    var as2 = parseInt(m.awayScore!=null?m.awayScore:(m.score&&m.score.away))||0;
+    var hPts = hs>as2?3:hs===as2?1:0;
+    var aPts = as2>hs?3:as2===hs?1:0;
+    var lookup = function(name) {
+      if(!name) return null;
+      if(TEAM_CONF[name]) return TEAM_CONF[name];
+      var en=Object.keys(TEAM_JP).find(function(k){return TEAM_JP[k]===name;});
+      return en?TEAM_CONF[en]:null;
+    };
+    var hName = m.homeTeamEn||(typeof m.homeTeam==='string'?m.homeTeam:(m.homeTeam&&m.homeTeam.name))||'';
+    var aName = m.awayTeamEn||(typeof m.awayTeam==='string'?m.awayTeam:(m.awayTeam&&m.awayTeam.name))||'';
+    var hc = lookup(hName), ac = lookup(aName);
+    if (hc && d2026[hc]) { d2026[hc].pts+=hPts; d2026[hc].g++; }
+    if (ac && d2026[ac]) { d2026[ac].pts+=aPts; d2026[ac].g++; }
   });
-  const rows = CONFS.map(c => ({c, ppg: d[c].g>0?(d[c].pts/d[c].g):null, g:d[c].g}))
-    .sort((a,b) => (b.ppg||0)-(a.ppg||0));
-  const maxPPG = Math.max(...rows.map(r=>r.ppg||0), 1);
-  el.innerHTML = '<div class="conf-ppg-title">大降別 試合あたり勝ち点</div>' +
-    rows.map(r => {
-      if (!r.ppg && r.g===0) return '<div class="conf-row"><span class="conf-name">'+r.c+'</span><span class="conf-na">試合なし</span></div>';
-      const pct = (r.ppg/maxPPG*100).toFixed(1);
-      return '<div class="conf-row">' +
-        '<span class="conf-name">'+r.c+'</span>' +
-        '<div class="conf-bar-wrap"><div class="conf-bar" style="width:'+pct+'%"></div></div>' +
-        '<span class="conf-val">'+r.ppg.toFixed(2)+'</span>' +
-        '</div>';
+
+  var ppg2026 = {};
+  CONFS.forEach(function(c){ ppg2026[c] = d2026[c].g>0 ? d2026[c].pts/d2026[c].g : null; });
+
+  var TOURNAMENTS = [
+    {key:'WC2018', label:'WC2018', color:'#a78bfa'},
+    {key:'WC2022', label:'WC2022', color:'#60a5fa'},
+    {key:'WC2026', label:'WC2026 (Live)', color:'#4ecdc4'},
+  ];
+
+  // Sort confs by WC2026 PPG descending (fallback 0)
+  var sorted = CONFS.map(function(c){ return {c:c, ppg2026: ppg2026[c]||0}; })
+    .sort(function(a,b){ return b.ppg2026-a.ppg2026; });
+
+  // Global max for bar scaling
+  var allVals = [];
+  sorted.forEach(function(item){
+    allVals.push(ppg2026[item.c]||0);
+    allVals.push((HIST_CONF_PPG['WC2022']||{})[item.c]||0);
+    allVals.push((HIST_CONF_PPG['WC2018']||{})[item.c]||0);
+  });
+  var maxPPG = Math.max.apply(null, allVals.concat([1]));
+
+  // Legend
+  var legendHtml = TOURNAMENTS.map(function(t){
+    return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ccc;margin-right:12px">'
+      +'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+t.color+'"></span>'+t.label+'</span>';
+  }).join('');
+
+  // Rows
+  var rowsHtml = sorted.map(function(item){
+    var c = item.c;
+    var vals = {
+      WC2018: (HIST_CONF_PPG['WC2018']||{})[c],
+      WC2022: (HIST_CONF_PPG['WC2022']||{})[c],
+      WC2026: ppg2026[c],
+    };
+    var barsHtml = TOURNAMENTS.map(function(t){
+      var v = vals[t.key];
+      var pct = v != null ? (v/maxPPG*100).toFixed(1) : 0;
+      var label = v != null ? v.toFixed(2) : (t.key==='WC2026'?'(未消化)':'—');
+      return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
+        +'<div style="flex:1;background:#1a2a3a;border-radius:2px;height:11px;overflow:hidden">'
+        +'<div style="background:'+t.color+';height:100%;border-radius:2px;width:'+pct+'%;transition:width .5s"></div></div>'
+        +'<span style="width:38px;text-align:right;font-size:11px;color:'+t.color+';flex-shrink:0">'+label+'</span>'
+        +'</div>';
     }).join('');
+    return '<div class="conf-row" style="align-items:flex-start;margin-bottom:10px">'
+      +'<span class="conf-name" style="padding-top:2px">'+c+'</span>'
+      +'<div style="flex:1">'+barsHtml+'</div>'
+      +'</div>';
+  }).join('');
+
+  el.innerHTML = '<div class="conf-ppg-title">大陸別 試合あたり勝ち点（大会間比較）</div>'
+    +'<div style="margin-bottom:10px;display:flex;flex-wrap:wrap">'+legendHtml+'</div>'
+    +rowsHtml;
 }
+
 
 function renderAll(data){
   renderConfPPG(data.matches);
