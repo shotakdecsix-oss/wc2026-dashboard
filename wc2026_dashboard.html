@@ -354,6 +354,17 @@
 .conf-val{width:55px;text-align:right;font-size:12px;color:#fff;flex-shrink:0;}
 .conf-na{font-size:11px;color:#555;font-style:italic;}
 
+
+.conf-band-wrap{margin-top:16px;padding:14px;background:#0d1f2d;border-radius:8px;}
+.conf-band-title{font-size:13px;font-weight:700;color:#4ecdc4;margin-bottom:12px;}
+.conf-band-row{display:flex;align-items:center;margin-bottom:10px;gap:8px;}
+.conf-band-label{width:130px;font-size:11px;color:#ccc;flex-shrink:0;text-align:right;line-height:1.3;}
+.conf-band-bar{flex:1;display:flex;height:36px;border-radius:4px;overflow:hidden;}
+.conf-band-seg{display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:600;overflow:hidden;white-space:nowrap;padding:0 3px;text-shadow:0 1px 2px rgba(0,0,0,.5);}
+.conf-band-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
+.conf-band-legend-item{display:flex;align-items:center;gap:4px;font-size:11px;color:#aaa;}
+.conf-band-legend-sq{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+
 </style>
 </head>
 <body>
@@ -1716,16 +1727,15 @@ const HIST_CONF_PPG = {
 function renderConfPPG(matches) {
   const el = document.getElementById('conf-ppg');
   if (!el) return;
-  const CONFS = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
-  const TOURNAMENTS = [
-    { key:'WC2018', label:'WC2018 (ロシア)', color:'#9b59b6', data: HIST_CONF_PPG['WC2018'] },
-    { key:'WC2022', label:'WC2022 (カタール)', color:'#3498db', data: HIST_CONF_PPG['WC2022'] },
-    { key:'WC2026', label:'WC2026 (米・加・墨)', color:'#4ecdc4', data: null }
-  ];
+  const CONF_ORDER = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
+  const CONF_COLORS = {
+    CONMEBOL:'#e74c3c', UEFA:'#3498db', CAF:'#2ecc71',
+    AFC:'#f39c12', CONCACAF:'#9b59b6', OFC:'#1abc9c'
+  };
 
-  // Compute WC2026 live
+  // Compute WC2026 live PPG
   const live = {};
-  CONFS.forEach(c => { live[c] = {pts:0, g:0}; });
+  CONF_ORDER.forEach(c => { live[c] = {pts:0, g:0}; });
   (matches||[]).forEach(m => {
     const st = (m.status||'').toUpperCase();
     if (!st.includes('FINISHED') && !st.includes('FULL') && !st.includes('FT') && st !== 'STATUS_FINAL' && st !== 'FINAL') return;
@@ -1733,40 +1743,47 @@ function renderConfPPG(matches) {
     const as2 = m.awayScore != null ? parseInt(m.awayScore) : (m.score ? parseInt(m.score.away) : 0);
     const hPts = hs>as2?3:hs===as2?1:0;
     const aPts = as2>hs?3:as2===hs?1:0;
-    const getTeamName = t => (t && typeof t === 'object') ? (t.name||t.shortName||'') : (t||'');
-    const hName = getTeamName(m.homeTeamEn || m.homeTeam);
-    const aName = getTeamName(m.awayTeamEn || m.awayTeam);
-    const hc = TEAM_CONF[hName];
-    const ac = TEAM_CONF[aName];
+    const getName = t => (t && typeof t==='object') ? (t.name||t.shortName||'') : (t||'');
+    const hc = TEAM_CONF[getName(m.homeTeamEn||m.homeTeam)];
+    const ac = TEAM_CONF[getName(m.awayTeamEn||m.awayTeam)];
     if (hc && live[hc]) { live[hc].pts+=hPts; live[hc].g++; }
     if (ac && live[ac]) { live[ac].pts+=aPts; live[ac].g++; }
   });
   const livePPG = {};
-  CONFS.forEach(c => { livePPG[c] = live[c].g > 0 ? live[c].pts/live[c].g : null; });
-  TOURNAMENTS[2].data = livePPG;
+  CONF_ORDER.forEach(c => { livePPG[c] = live[c].g>0 ? live[c].pts/live[c].g : null; });
 
-  const allVals = TOURNAMENTS.flatMap(t => CONFS.map(c => t.data[c]||0));
-  const maxPPG = Math.max(...allVals, 1);
+  const TOURNAMENTS = [
+    { label:'WC2018 (ロシア)', data: HIST_CONF_PPG['WC2018'], live: false },
+    { label:'WC2022 (カタール)', data: HIST_CONF_PPG['WC2022'], live: false },
+    { label:'WC2026 (米・加・墨)', data: livePPG, live: true }
+  ];
 
-  el.innerHTML = '<div class="conf-ppg-main-title">大陋別 試合あたり勝ち点</div>' +
-    TOURNAMENTS.map(t => {
-      const rows = CONFS.map(c => ({c, ppg: t.data[c]}))
-        .filter(r => r.ppg != null)
-        .sort((a,b) => b.ppg - a.ppg);
-      if (rows.length === 0) return '';
-      const liveTag = t.key==='WC2026' ? ' <span style="font-size:10px;color:#e74c3c;">● LIVE</span>' : '';
-      return '<div class="conf-tournament-block">' +
-        '<div class="conf-tournament-label" style="color:'+t.color+'">'+t.label+liveTag+'</div>' +
-        rows.map(r => {
-          const pct = (r.ppg/maxPPG*100).toFixed(1);
-          return '<div class="conf-row">'+
-            '<span class="conf-name">'+r.c+'</span>'+
-            '<div class="conf-bar-wrap"><div class="conf-bar" style="width:'+pct+'%;background:'+t.color+'"></div></div>'+
-            '<span class="conf-val">'+r.ppg.toFixed(2)+'</span>'+
-            '</div>';
-        }).join('') +
-        '</div>';
+  function makeBar(data, isLive) {
+    const entries = CONF_ORDER.map(c => ({c, ppg: data[c]||0})).filter(e => e.ppg > 0);
+    const total = entries.reduce((s,e) => s+e.ppg, 0);
+    if (total === 0) return '<div style="color:#555;font-size:11px;padding:8px;">データなし</div>';
+    return entries.map(e => {
+      const pct = (e.ppg/total*100);
+      const label = pct >= 10 ? e.c+' ('+e.ppg.toFixed(2)+')' : (pct >= 6 ? e.c : '');
+      return '<div class="conf-band-seg" style="width:'+pct.toFixed(2)+'%;background:'+CONF_COLORS[e.c]+';" title="'+e.c+': '+e.ppg.toFixed(2)+' pts/game">'+label+'</div>';
     }).join('');
+  }
+
+  const liveTag = ' <span style="font-size:10px;color:#e74c3c;font-weight:normal;">&#9679; LIVE</span>';
+
+  el.className = 'conf-band-wrap';
+  el.innerHTML = '<div class="conf-band-title">大陸別 試合あたり勝ち点</div>' +
+    TOURNAMENTS.map(t => {
+      return '<div class="conf-band-row">'+
+        '<div class="conf-band-label">'+t.label+(t.live?liveTag:'')+'</div>'+
+        '<div class="conf-band-bar">'+makeBar(t.data, t.live)+'</div>'+
+        '</div>';
+    }).join('') +
+    '<div class="conf-band-legend">' +
+    CONF_ORDER.map(c =>
+      '<div class="conf-band-legend-item"><div class="conf-band-legend-sq" style="background:'+CONF_COLORS[c]+'"></div>'+c+'</div>'
+    ).join('') +
+    '</div>';
 }
 
 
