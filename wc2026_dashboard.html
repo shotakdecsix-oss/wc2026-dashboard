@@ -636,19 +636,12 @@
             <div class="ai-section-wrap">
         <div class="ai-card" id="ai-group-prediction" style="--ai-accent:#e67e22">
           <div class="ai-card-header">
-            <div class="ai-card-title">🏆 グループ突破予想 A〜F</div>
+            <div class="ai-card-title">🏆 グループ突破予想</div>
             <span class="ai-badge">AI generated</span>
           </div>
           <div class="ai-card-body" id="ai-group-text"> </div>
         </div>
-        <div class="ai-card" style="--ai-accent:#e67e22" id="ai-group2-prediction">
-          <div class="ai-card-header">
-            <div class="ai-card-title">🏆 グループ突破予想 G〜L</div>
-            <span class="ai-badge">AI generated</span>
-          </div>
-          <div class="ai-card-body" id="ai-group2-text">—</div>
-        </div>
-        <div class="ai-card" id="ai-japan-scenario" style="--ai-accent:#3498db">
+                <div class="ai-card" id="ai-japan-scenario" style="--ai-accent:#3498db">
           <div class="ai-card-header">
             <div class="ai-card-title">🗾 日本代表グループ突破シナリオ</div>
             <span class="ai-badge">AI generated</span>
@@ -1949,8 +1942,7 @@ function renderAIAnalysis(ai) {
     var el = document.getElementById(id);
     if (el && val) el.innerHTML = parseAiText(val);
   };
-  set('ai-group-text', ai.groupPrediction1);
-  set('ai-group2-text', ai.groupPrediction2);
+  set('ai-group-text', ai.groupPrediction);
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
