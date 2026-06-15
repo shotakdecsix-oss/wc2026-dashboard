@@ -546,6 +546,8 @@
   </details>
 
   <details id="sec-tactics">
+<div id="conf-ppg" class="conf-ppg-wrap"></div>
+
     <summary><span class="sum-left">🧠 戦術比較分析</span><span class="arrow">▼</span></summary>
     <div class="section-body">
       <p style="font-size:.74rem;color:var(--muted);margin-bottom:16px">※ FIFA公式レポート・各大会発表統計に基づく推計値です。</p>
@@ -553,7 +555,7 @@
       <div id="corr-analysis"></div>
     </div>
   </details>
-<div id="conf-ppg" class="conf-ppg-wrap"></div>
+
 </div>
 
 <script>
@@ -1711,88 +1713,59 @@ const HIST_CONF_PPG = {
 
 
 function renderConfPPG(matches) {
-  var el = document.getElementById('conf-ppg');
+  const el = document.getElementById('conf-ppg');
   if (!el) return;
-  var CONFS = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
-
-  // Compute WC2026 live PPG
-  var d2026 = {};
-  CONFS.forEach(function(c){ d2026[c]={pts:0,g:0}; });
-  (matches||[]).forEach(function(m) {
-    var st = (m.status||'').toUpperCase();
-    if (!st.includes('FULL') && !st.includes('FT') && st !== 'STATUS_FINAL' && st !== 'FINAL' && st !== 'FINISHED') return;
-    var hs = parseInt(m.homeScore!=null?m.homeScore:(m.score&&m.score.home))||0;
-    var as2 = parseInt(m.awayScore!=null?m.awayScore:(m.score&&m.score.away))||0;
-    var hPts = hs>as2?3:hs===as2?1:0;
-    var aPts = as2>hs?3:as2===hs?1:0;
-    var lookup = function(name) {
-      if(!name) return null;
-      if(TEAM_CONF[name]) return TEAM_CONF[name];
-      var en=Object.keys(TEAM_JP).find(function(k){return TEAM_JP[k]===name;});
-      return en?TEAM_CONF[en]:null;
-    };
-    var hName = m.homeTeamEn||(typeof m.homeTeam==='string'?m.homeTeam:(m.homeTeam&&m.homeTeam.name))||'';
-    var aName = m.awayTeamEn||(typeof m.awayTeam==='string'?m.awayTeam:(m.awayTeam&&m.awayTeam.name))||'';
-    var hc = lookup(hName), ac = lookup(aName);
-    if (hc && d2026[hc]) { d2026[hc].pts+=hPts; d2026[hc].g++; }
-    if (ac && d2026[ac]) { d2026[ac].pts+=aPts; d2026[ac].g++; }
-  });
-
-  var ppg2026 = {};
-  CONFS.forEach(function(c){ ppg2026[c] = d2026[c].g>0 ? d2026[c].pts/d2026[c].g : null; });
-
-  var TOURNAMENTS = [
-    {key:'WC2018', label:'WC2018', color:'#a78bfa'},
-    {key:'WC2022', label:'WC2022', color:'#60a5fa'},
-    {key:'WC2026', label:'WC2026 (Live)', color:'#4ecdc4'},
+  const CONFS = ['CONMEBOL','UEFA','CAF','AFC','CONCACAF','OFC'];
+  const TOURNAMENTS = [
+    { key:'WC2018', label:'WC2018', color:'#9b59b6', data: HIST_CONF_PPG['WC2018'] },
+    { key:'WC2022', label:'WC2022', color:'#3498db', data: HIST_CONF_PPG['WC2022'] },
+    { key:'WC2026', label:'WC2026', color:'#4ecdc4', data: null }
   ];
 
-  // Sort confs by WC2026 PPG descending (fallback 0)
-  var sorted = CONFS.map(function(c){ return {c:c, ppg2026: ppg2026[c]||0}; })
-    .sort(function(a,b){ return b.ppg2026-a.ppg2026; });
-
-  // Global max for bar scaling
-  var allVals = [];
-  sorted.forEach(function(item){
-    allVals.push(ppg2026[item.c]||0);
-    allVals.push((HIST_CONF_PPG['WC2022']||{})[item.c]||0);
-    allVals.push((HIST_CONF_PPG['WC2018']||{})[item.c]||0);
+  // Compute WC2026 live
+  const live = {};
+  CONFS.forEach(c => { live[c] = {pts:0, g:0}; });
+  (matches||[]).forEach(m => {
+    const st = (m.status||'').toUpperCase();
+    if (!st.includes('FINISHED') && !st.includes('FULL') && !st.includes('FT') && st !== 'STATUS_FINAL' && st !== 'FINAL') return;
+    const hs = m.homeScore != null ? parseInt(m.homeScore) : (m.score ? parseInt(m.score.home) : 0);
+    const as2 = m.awayScore != null ? parseInt(m.awayScore) : (m.score ? parseInt(m.score.away) : 0);
+    const hPts = hs>as2?3:hs===as2?1:0;
+    const aPts = as2>hs?3:as2===hs?1:0;
+    const getTeamName = t => (t && typeof t === 'object') ? (t.name||t.shortName||'') : (t||'');
+    const hName = getTeamName(m.homeTeamEn || m.homeTeam);
+    const aName = getTeamName(m.awayTeamEn || m.awayTeam);
+    const hc = TEAM_CONF[hName];
+    const ac = TEAM_CONF[aName];
+    if (hc && live[hc]) { live[hc].pts+=hPts; live[hc].g++; }
+    if (ac && live[ac]) { live[ac].pts+=aPts; live[ac].g++; }
   });
-  var maxPPG = Math.max.apply(null, allVals.concat([1]));
+  const livePPG = {};
+  CONFS.forEach(c => { livePPG[c] = live[c].g > 0 ? live[c].pts/live[c].g : null; });
+  TOURNAMENTS[2].data = livePPG;
 
-  // Legend
-  var legendHtml = TOURNAMENTS.map(function(t){
-    return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ccc;margin-right:12px">'
-      +'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+t.color+'"></span>'+t.label+'</span>';
-  }).join('');
+  const allVals = TOURNAMENTS.flatMap(t => CONFS.map(c => t.data[c]||0));
+  const maxPPG = Math.max(...allVals, 1);
 
-  // Rows
-  var rowsHtml = sorted.map(function(item){
-    var c = item.c;
-    var vals = {
-      WC2018: (HIST_CONF_PPG['WC2018']||{})[c],
-      WC2022: (HIST_CONF_PPG['WC2022']||{})[c],
-      WC2026: ppg2026[c],
-    };
-    var barsHtml = TOURNAMENTS.map(function(t){
-      var v = vals[t.key];
-      var pct = v != null ? (v/maxPPG*100).toFixed(1) : 0;
-      var label = v != null ? v.toFixed(2) : (t.key==='WC2026'?'(未消化)':'—');
-      return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
-        +'<div style="flex:1;background:#1a2a3a;border-radius:2px;height:11px;overflow:hidden">'
-        +'<div style="background:'+t.color+';height:100%;border-radius:2px;width:'+pct+'%;transition:width .5s"></div></div>'
-        +'<span style="width:38px;text-align:right;font-size:11px;color:'+t.color+';flex-shrink:0">'+label+'</span>'
-        +'</div>';
+  el.innerHTML = '<div class="conf-ppg-main-title">大陋別 試合あたり勝ち点</div>' +
+    TOURNAMENTS.map(t => {
+      const rows = CONFS.map(c => ({c, ppg: t.data[c]}))
+        .filter(r => r.ppg != null)
+        .sort((a,b) => b.ppg - a.ppg);
+      if (rows.length === 0) return '';
+      const liveTag = t.key==='WC2026' ? ' <span style="font-size:10px;color:#e74c3c;">● LIVE</span>' : '';
+      return '<div class="conf-tournament-block">' +
+        '<div class="conf-tournament-label" style="color:'+t.color+'">'+t.label+liveTag+'</div>' +
+        rows.map(r => {
+          const pct = (r.ppg/maxPPG*100).toFixed(1);
+          return '<div class="conf-row">'+
+            '<span class="conf-name">'+r.c+'</span>'+
+            '<div class="conf-bar-wrap"><div class="conf-bar" style="width:'+pct+'%;background:'+t.color+'"></div></div>'+
+            '<span class="conf-val">'+r.ppg.toFixed(2)+'</span>'+
+            '</div>';
+        }).join('') +
+        '</div>';
     }).join('');
-    return '<div class="conf-row" style="align-items:flex-start;margin-bottom:10px">'
-      +'<span class="conf-name" style="padding-top:2px">'+c+'</span>'
-      +'<div style="flex:1">'+barsHtml+'</div>'
-      +'</div>';
-  }).join('');
-
-  el.innerHTML = '<div class="conf-ppg-title">大陸別 試合あたり勝ち点（大会間比較）</div>'
-    +'<div style="margin-bottom:10px;display:flex;flex-wrap:wrap">'+legendHtml+'</div>'
-    +rowsHtml;
 }
 
 
