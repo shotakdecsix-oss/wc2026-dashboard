@@ -790,31 +790,28 @@ def generate_ai_analysis(data, cfg):
         'winnerPrediction': (
             context
             + "\n## タスク\n"
-            "WC2026の優勝予想とノックアウトトーナメント予想を行ってください。\n\n"
-            "## Part 1: 優勝候補・注目チーム（200字以内）\n"
-            "- 優勝候補トップ3と根拠（FIFAランキング・WC実績・主力選手の状態）\n"
-            "- ダークホース1〜2カ国\n"
-            "- グループ敗退が予想されるランク上位国\n\n"
-            "## Part 2: ノックアウトトーナメント予想\n"
-            "グループ予想で突破した32チームを使って、R32から決勝まで予想してください。\n"
-            "WC2026のブラケットは以下の構造で組まれます（各グループ1位・2位 + 3位8チーム）。\n"
-            "コンパクトなフォーマットで、以下の形式を使ってください：\n\n"
-            "### ラウンド32（ベスト32）\n"
-            "[チームA] vs [チームB] → **[勝者]**\n"
-            "（16試合を全て記載）\n\n"
-            "### ラウンド16（ベスト16）\n"
-            "（8試合）\n\n"
-            "### 準々決勝\n"
-            "（4試合）\n\n"
-            "### 準決勝\n"
-            "（2試合）\n\n"
-            "### 3位決定戦\n"
-            "（1試合）\n\n"
-            "### 決勝\n"
-            "（1試合）\n\n"
-            "## 優勝国: [チーム名]\n\n"
-            "グループ突破予想と整合性を取ること（グループ敗退予想チームはトーナメントに出ない）。\n"
-            "回答は日本語で。**勝者チーム名**は太字で。"
+            "優勝候補トップ3と根拠（FIFAランキング・WC実績・主力選手の状態）を挙げてください。\n"
+            "ダークホース1〜2カ国と、グループ敗退予想のランク上位国も記載してください。\n"
+            "300字以内で日本語で。**キーワード**は太字で。"
+        ),
+        'bracketPrediction': (
+            context
+            + "\n## タスク\n"
+            "WC2026のノックアウトトーナメント予想をJSON形式で出力してください。\n"
+            "グループ各1位・2位（計24チーム）+ 3位上位8チームの計32チームで構成されます。\n"
+            "現在の試合結果と傾向から、合理的な予想を行ってください。\n\n"
+            "以下の構造のJSONのみ出力してください（マークダウン・コードブロック・説明文は一切不要）：\n\n"
+            '{"r32":[{"home":"チームA","away":"チームB","winner":"チームA"},...],'
+            '"r16":[...8試合...],"qf":[...4試合...],"sf":[...2試合...],'
+            '"final":{"home":"X","away":"Y","winner":"X"},'
+            '"third":{"home":"P","away":"Q","winner":"P"},'
+            '"champion":"X"}'
+            "\n\nルール：\n"
+            "- r32は必ず16試合（home/away/winner の3フィールド必須）\n"
+            "- r16は8試合、qfは4試合、sfは2試合、finalは1試合\n"
+            "- winnerは必ずhomeかawayどちらかのチーム名と完全一致\n"
+            "- チーム名は日本語で統一\n"
+            "- JSONのみ出力、前後に何も書かない"
         ),
         'tacticalTrend': (
             context
@@ -832,7 +829,7 @@ def generate_ai_analysis(data, cfg):
         try:
             resp = client.messages.create(
                 model='claude-haiku-4-5-20251001',
-                max_tokens=3000 if key == 'groupPrediction' else (2500 if key == 'winnerPrediction' else 800),
+                max_tokens=3000 if key == 'groupPrediction' else (2500 if key == 'bracketPrediction' else 800),
                 messages=[{'role': 'user', 'content': prompt}]
             )
             result[key] = resp.content[0].text.strip()

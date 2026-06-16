@@ -654,6 +654,7 @@
             <span class="ai-badge">AI generated</span>
           </div>
           <div class="ai-card-body" id="ai-winner-text"> </div>
+          <div id="bracket-prediction" style="margin-top:1rem;overflow-x:auto;-webkit-overflow-scrolling:touch;"></div>
         </div>
         <div class="ai-card" id="ai-tactical-trend" style="--ai-accent:#9b59b6">
           <div class="ai-card-header">
@@ -1936,6 +1937,117 @@ function parseAiText(txt) {
   return txt;
 }
 
+
+function renderBracketPrediction(bracketJson) {
+  var el = document.getElementById('bracket-prediction');
+  if (!el) return;
+  var data;
+  try {
+    data = typeof bracketJson === 'string' ? JSON.parse(bracketJson) : bracketJson;
+  } catch(e) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">ブラケットデータを解析できませんでした</p>'; return; }
+  if (!data || !data.r32) return;
+
+  var SH = 26;  // slot height px
+  var MH = SH * 2 + 1; // match height
+  var CW = 140; // column width
+  var HDR = 26; // header height
+  var NS = 32;  // total slots
+  var TH = NS * SH + HDR + 4;
+
+  var rounds = [
+    {key:'r32',   label:'R32',   spm:2},
+    {key:'r16',   label:'R16',   spm:4},
+    {key:'qf',    label:'QF',    spm:8},
+    {key:'sf',    label:'SF',    spm:16},
+    {key:'final', label:'決勝',  spm:32},
+  ];
+
+  var accentGreen = '#27ae60';
+  var totalW = rounds.length * CW + 90;
+  var out = '<div style="position:relative;width:' + totalW + 'px;height:' + TH + 'px;font-family:sans-serif;">';
+
+  rounds.forEach(function(round, ri) {
+    var matches = data[round.key];
+    if (!matches) return;
+    if (!Array.isArray(matches)) matches = [matches];
+    var colX = ri * CW;
+
+    // Header
+    out += '<div style="position:absolute;left:' + colX + 'px;top:0;width:' + CW + 'px;'
+         + 'text-align:center;font-size:0.62rem;font-weight:700;color:#888;'
+         + 'border-bottom:1px solid #ccc;padding:3px 0;box-sizing:border-box;">'
+         + round.label + '</div>';
+
+    matches.forEach(function(m, mi) {
+      if (!m) return;
+      var centerSlot = mi * round.spm + round.spm / 2.0;
+      var top = HDR + centerSlot * SH - MH / 2.0;
+      var mw = CW - 16;
+      var homeWin = m.winner && m.home && m.winner === m.home;
+      var awayWin = m.winner && m.away && m.winner === m.away;
+
+      out += '<div style="position:absolute;left:' + (colX+6) + 'px;top:' + top + 'px;'
+           + 'width:' + mw + 'px;border:1px solid #ccc;border-radius:3px;overflow:hidden;">';
+      out += '<div style="padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+           + (homeWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
+           + '">' + (m.home||'?') + '</div>';
+      out += '<div style="border-top:1px solid #ccc;padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+           + (awayWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
+           + '">' + (m.away||'?') + '</div>';
+      out += '</div>';
+
+      // Connector lines
+      if (ri < rounds.length - 1) {
+        var myY = HDR + centerSlot * SH;  // center Y of this match
+        var rightX = colX + CW - 10;
+        var nextRound = rounds[ri + 1];
+        var pairMi = Math.floor(mi / 2);
+        var nextCenter = pairMi * nextRound.spm + nextRound.spm / 2.0;
+        var nextY = HDR + nextCenter * SH;
+        var midX = rightX + (CW - mw - 16) / 2 + (mi % 2 === 0 ? 5 : 5);
+
+        // Horizontal from match right to connector X
+        out += '<div style="position:absolute;top:' + myY + 'px;left:' + (colX + mw + 8) + 'px;'
+             + 'width:' + (midX - colX - mw - 8 + 2) + 'px;height:1px;background:#ccc;"></div>';
+
+        // Vertical line connecting pair (draw only from even index)
+        if (mi % 2 === 0) {
+          var pairCenter = (mi + 1) * round.spm + round.spm / 2.0;
+          var pairY = HDR + pairCenter * SH;
+          var vTop = Math.min(myY, pairY);
+          var vH = Math.abs(pairY - myY);
+          out += '<div style="position:absolute;left:' + midX + 'px;top:' + vTop + 'px;'
+               + 'width:1px;height:' + vH + 'px;background:#ccc;"></div>';
+          // Horizontal from midX to next column
+          out += '<div style="position:absolute;top:' + nextY + 'px;left:' + midX + 'px;'
+               + 'width:' + ((ri+1)*CW + 6 - midX) + 'px;height:1px;background:#ccc;"></div>';
+        }
+      }
+    });
+  });
+
+  // Champion
+  if (data.champion) {
+    var cx = rounds.length * CW + 12;
+    var cy = TH / 2 - 18;
+    out += '<div style="position:absolute;left:' + cx + 'px;top:' + cy + 'px;'
+         + 'text-align:center;font-size:0.8rem;font-weight:700;color:#e67e22;">'
+         + '🏆<br>' + data.champion + '</div>';
+  }
+
+  out += '</div>';
+
+  // 3rd place note
+  var thirdHtml = '';
+  if (data.third) {
+    thirdHtml = '<div style="margin-top:6px;font-size:0.7rem;color:#888;">'
+      + '3位決定戦: ' + (data.third.home||'?') + ' vs ' + (data.third.away||'?')
+      + ' → <strong>' + (data.third.winner||'?') + '</strong></div>';
+  }
+
+  el.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">' + out + '</div>' + thirdHtml;
+}
+
 function renderAIAnalysis(ai) {
   if (!ai) return;
   var set = function(id, val) {
@@ -1946,6 +2058,7 @@ function renderAIAnalysis(ai) {
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
+  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction);
   var upd = document.getElementById('ai-updated-time');
   if (upd && ai.generatedAt) upd.textContent = '最終更新: ' + ai.generatedAt;
 }
