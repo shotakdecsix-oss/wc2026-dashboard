@@ -819,6 +819,7 @@ def generate_ai_analysis(data, cfg):
             "- r16_wは8チーム名の配列（M89〜M96の勝者を順番に）\n"
             "- qf_wは4チーム、sf_wは2チーム、champion/thirdは1チーム\n"
             "- winnerは必ずhomeかawayと完全一致\n"
+            "- 同じチームはr32の16試合全体で必ず1回のみ登場（重複禁止）\n"
             "- チーム名は日本語で統一\n"
             "- JSONのみ出力、前後に何も書かない"
         ),
