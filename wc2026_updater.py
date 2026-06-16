@@ -756,12 +756,13 @@ def generate_ai_analysis(data, cfg):
             context
             + "\n## タスク\n"
             "WC2026全12グループ(A～L)の突破予想をしてください。\n\n"
-            "【STEP 1】各グループの順位予想（各グループこの4行のみ、理由なし）：\n\n"
-            "グループX:\n"
-            "- 1位: [チーム名]（自動通過）\n"
-            "- 2位: [チーム名]（自動通過）\n"
-            "- 3位: [チーム名]（3位通過争い参加）\n"
-            "- 4位: [チーム名]（最下位、無条件敗退）\n\n"
+            "【STEP 1】各グループの1〜4位を予想し、各チームに必ず予想理由（一言15字以内）を添えてください。\n"
+            "理由の省略は禁止。以下の例のフォーマット通りに出力してください：\n\n"
+            "グループ例:\n"
+            "- 1位: ブラジル — W杯実績と攻撃力が群を抜く（自動通過）\n"
+            "- 2位: ドイツ — 堅守速攻で安定した勝ち点（自動通過）\n"
+            "- 3位: チェコ — 個人技はあるが総合力で一歩及ばず（3位通過争い参加）\n"
+            "- 4位: パナマ — 格上相手に得点力が課題（最下位敗退）\n\n"
             "グループA～Lの12グループ全てを上記フォーマットで出力してください。\n\n"
             "---\n"
             "【STEP 2】自分が上で3位と予想した12チームを列挙（必ず記入）：\n"
@@ -811,7 +812,7 @@ def generate_ai_analysis(data, cfg):
         try:
             resp = client.messages.create(
                 model='claude-haiku-4-5-20251001',
-                max_tokens=2000 if key == 'groupPrediction' else 800,
+                max_tokens=3000 if key == 'groupPrediction' else 800,
                 messages=[{'role': 'user', 'content': prompt}]
             )
             result[key] = resp.content[0].text.strip()
