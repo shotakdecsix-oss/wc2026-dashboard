@@ -1993,7 +1993,14 @@ function renderBracketPrediction(bracketJson) {
   // r16_w from AI: [M89w,M90w,M91w,M92w,M93w,M94w,M95w,M96w]
   // Visual R16 order: [M89,M90,M93,M94,M91,M92,M95,M96]
   // → reorder indices: [0,1,4,5,2,3,6,7]
-  var r16wAI = data.r16_w || [];
+  // Support both new format (r16_w array) and old format (r16 array of match objects)
+  var r16wAI = data.r16_w ||
+               (data.r16 ? data.r16.map(function(m){return m.winner||'';}) : []);
+  var qfwAI  = data.qf_w ||
+               (data.qf ? data.qf.map(function(m){return m.winner||'';}) : []);
+  var sfwAI  = data.sf_w ||
+               (data.sf ? data.sf.map(function(m){return m.winner||'';}) :
+                (data.final ? [data.final.home||'', data.final.away||''] : []));
   var r16wv = [
     r16wAI[0]||'', r16wAI[1]||'',
     r16wAI[4]||'', r16wAI[5]||'',
@@ -2007,7 +2014,6 @@ function renderBracketPrediction(bracketJson) {
   // QF visual: [M97,M98,M99,M100]
   // M97=r16wv[0]vr16wv[1], M98=r16wv[2]vr16wv[3]
   // M99=r16wv[4]vr16wv[5], M100=r16wv[6]vr16wv[7]
-  var qfwAI = data.qf_w || [];
   var qfvis = [
     {home: r16wv[0]||'?', away: r16wv[1]||'?', winner: qfwAI[0]||''},
     {home: r16wv[2]||'?', away: r16wv[3]||'?', winner: qfwAI[1]||''},
@@ -2016,7 +2022,6 @@ function renderBracketPrediction(bracketJson) {
   ];
 
   // SF: M101=qfwAI[0]vqfwAI[1], M102=qfwAI[2]vqfwAI[3]
-  var sfwAI = data.sf_w || [];
   var sfvis = [
     {home: qfwAI[0]||'?', away: qfwAI[1]||'?', winner: sfwAI[0]||''},
     {home: qfwAI[2]||'?', away: qfwAI[3]||'?', winner: sfwAI[1]||''}
