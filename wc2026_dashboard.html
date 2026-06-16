@@ -1938,7 +1938,7 @@ function parseAiText(txt) {
 }
 
 
-function renderBracketPrediction(bracketJson) {
+function renderBracketPrediction(bracketJson, groupPredText) {
   var el = document.getElementById('bracket-prediction');
   if (!el) return;
   var data;
@@ -1964,25 +1964,21 @@ function renderBracketPrediction(bracketJson) {
     {key:'final', label:'決勝',  spm:32},
   ];
 
-  // Build team→slot map: prefer AI-provided slots, fall back to live standings
+  // Build team→slot map by parsing AI groupPrediction text
+  // Format: ### グループX\n- N位: **team**
   var teamSlotMap = {};
   try {
-    if (data.slots && typeof data.slots === 'object') {
-      // AI-provided slot map (most accurate - uses predicted final positions)
-      Object.keys(data.slots).forEach(function(team) {
-        teamSlotMap[team] = data.slots[team];
+    if (groupPredText) {
+      var currentGroup = '';
+      groupPredText.split('\n').forEach(function(line) {
+        var grpM = line.match(/###\s*グループ([A-L])/);
+        if (grpM) { currentGroup = grpM[1]; return; }
+        var posM = line.match(/[-*]\s*([1-4])位[:\s：]+\*\*(.+?)\*\*/);
+        if (posM && currentGroup) {
+          var pos = posM[1], team = posM[2].trim();
+          teamSlotMap[team] = currentGroup + pos + '位';
+        }
       });
-    } else {
-      // Fallback: current live standings
-      var ld = window.__wc2026liveData || (typeof liveData !== 'undefined' ? liveData : null);
-      if (ld && ld.groups) {
-        ld.groups.forEach(function(g) {
-          if (!g.teams) return;
-          g.teams.forEach(function(t, i) {
-            teamSlotMap[t.name] = g.id + (i+1) + '位';
-          });
-        });
-      }
     }
   } catch(e) {}
 
@@ -2085,7 +2081,7 @@ function renderAIAnalysis(ai) {
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
-  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction);
+  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction, ai.groupPrediction);
   var upd = document.getElementById('ai-updated-time');
   if (upd && ai.generatedAt) upd.textContent = '最終更新: ' + ai.generatedAt;
 }
