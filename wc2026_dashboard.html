@@ -1938,7 +1938,7 @@ function parseAiText(txt) {
 }
 
 
-function renderBracketPrediction(bracketJson, groupPredText) {
+function renderBracketPrediction(bracketJson) {
   var el = document.getElementById('bracket-prediction');
   if (!el) return;
   var data;
@@ -1964,23 +1964,25 @@ function renderBracketPrediction(bracketJson, groupPredText) {
     {key:'final', label:'決勝',  spm:32},
   ];
 
-  // Build team→slot map by parsing AI groupPrediction text
-  // Format: ### グループX\n- N位: **team**
-  var teamSlotMap = {};
-  try {
-    if (groupPredText) {
-      var currentGroup = '';
-      groupPredText.split('\n').forEach(function(line) {
-        var grpM = line.match(/###\s*グループ([A-L])/);
-        if (grpM) { currentGroup = grpM[1]; return; }
-        var posM = line.match(/[-*]\s*([1-4])位[:\s：]+\*\*(.+?)\*\*/);
-        if (posM && currentGroup) {
-          var pos = posM[1], team = posM[2].trim();
-          teamSlotMap[team] = currentGroup + pos + '位';
-        }
-      });
-    }
-  } catch(e) {}
+  // Official FIFA WC2026 R32 slot labels (M73-M88 order)
+  var r32SlotLabels = [
+    {h:'2位A', a:'2位B'},    // M73
+    {h:'1位E', a:'3位'},     // M74
+    {h:'1位F', a:'2位C'},    // M75
+    {h:'1位C', a:'2位F'},    // M76
+    {h:'1位I', a:'3位'},     // M77
+    {h:'2位E', a:'2位I'},    // M78
+    {h:'1位A', a:'3位'},     // M79
+    {h:'1位L', a:'3位'},     // M80
+    {h:'1位D', a:'3位'},     // M81
+    {h:'1位G', a:'3位'},     // M82
+    {h:'2位K', a:'2位L'},    // M83
+    {h:'1位H', a:'2位J'},    // M84
+    {h:'1位B', a:'3位'},     // M85
+    {h:'1位J', a:'2位H'},    // M86
+    {h:'1位K', a:'3位'},     // M87
+    {h:'2位D', a:'2位G'},    // M88
+  ];
 
 
   var accentGreen = '#27ae60';
@@ -2009,11 +2011,12 @@ function renderBracketPrediction(bracketJson, groupPredText) {
 
       out += '<div style="position:absolute;left:' + (colX+6) + 'px;top:' + top + 'px;'
            + 'width:' + mw + 'px;border:1px solid #ccc;border-radius:3px;overflow:hidden;">';
-      var homeSlotLabel = (round.key === 'r32' && teamSlotMap[m.home]) ? '<span style="font-size:0.5rem;opacity:0.65;margin-left:2px;">(' + teamSlotMap[m.home] + ')</span>' : '';
+      var r32sl = (round.key === 'r32' && r32SlotLabels[mi]) ? r32SlotLabels[mi] : null;
+      var homeSlotLabel = r32sl ? '<span style="font-size:0.5rem;opacity:0.7;margin-left:3px;font-weight:400;">[' + r32sl.h + ']</span>' : '';
       out += '<div style="padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
            + (homeWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
            + '">' + (m.home||'?') + homeSlotLabel + '</div>';
-      var awaySlotLabel = (round.key === 'r32' && teamSlotMap[m.away]) ? '<span style="font-size:0.5rem;opacity:0.65;margin-left:2px;">(' + teamSlotMap[m.away] + ')</span>' : '';
+      var awaySlotLabel = r32sl ? '<span style="font-size:0.5rem;opacity:0.7;margin-left:3px;font-weight:400;">[' + r32sl.a + ']</span>' : '';
       out += '<div style="border-top:1px solid #ccc;padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
            + (awayWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
            + '">' + (m.away||'?') + awaySlotLabel + '</div>';
@@ -2081,7 +2084,7 @@ function renderAIAnalysis(ai) {
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
-  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction, ai.groupPrediction);
+  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction);
   var upd = document.getElementById('ai-updated-time');
   if (upd && ai.generatedAt) upd.textContent = '最終更新: ' + ai.generatedAt;
 }
