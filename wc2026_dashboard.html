@@ -1943,7 +1943,9 @@ function renderBracketPrediction(bracketJson) {
   if (!el) return;
   var data;
   try {
-    data = typeof bracketJson === 'string' ? JSON.parse(bracketJson) : bracketJson;
+    var raw = typeof bracketJson === 'string' ? bracketJson : JSON.stringify(bracketJson);
+    raw = raw.replace(/^```[a-z]*\s*/,'').replace(/\s*```\s*$/,'').trim();
+    data = JSON.parse(raw);
   } catch(e) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">ブラケットデータを解析できませんでした</p>'; return; }
   if (!data || !data.r32) return;
 

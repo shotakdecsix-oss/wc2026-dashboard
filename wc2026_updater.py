@@ -832,7 +832,13 @@ def generate_ai_analysis(data, cfg):
                 max_tokens=3000 if key == 'groupPrediction' else (2500 if key == 'bracketPrediction' else 800),
                 messages=[{'role': 'user', 'content': prompt}]
             )
-            result[key] = resp.content[0].text.strip()
+            raw = resp.content[0].text.strip()
+            if key == 'bracketPrediction':
+                import re as _re
+                raw = _re.sub(r'^```[a-z]*\s*', '', raw)
+                raw = _re.sub(r'\s*```\s*$', '', raw)
+                raw = raw.strip()
+            result[key] = raw
             log(f"AI分析: {key} OK")
         except Exception as e:
             log(f"AI分析: {key} error: {e}")
