@@ -2001,34 +2001,45 @@ function renderBracketPrediction(bracketJson) {
   var sfwAI  = data.sf_w ||
                (data.sf ? data.sf.map(function(m){return m.winner||'';}) :
                 (data.final ? [data.final.home||'', data.final.away||''] : []));
-  var r16wv = [
-    r16wAI[0]||'', r16wAI[1]||'',
-    r16wAI[4]||'', r16wAI[5]||'',
-    r16wAI[2]||'', r16wAI[3]||'',
-    r16wAI[6]||'', r16wAI[7]||''
-  ];
-  var r16vis = r16wv.map(function(w, i) {
-    return {home: r32w[i*2] || '?', away: r32w[i*2+1] || '?', winner: w};
-  });
+  // Intersection approach: for each match, use AI's advancement set to pick winner
+  var r16AdvSet = {};
+  (r16wAI||[]).forEach(function(t){ if(t) r16AdvSet[t] = true; });
 
-  // QF visual: [M97,M98,M99,M100]
-  // M97=r16wv[0]vr16wv[1], M98=r16wv[2]vr16wv[3]
-  // M99=r16wv[4]vr16wv[5], M100=r16wv[6]vr16wv[7]
-  var qfvis = [
-    {home: r16wv[0]||'?', away: r16wv[1]||'?', winner: qfwAI[0]||''},
-    {home: r16wv[2]||'?', away: r16wv[3]||'?', winner: qfwAI[1]||''},
-    {home: r16wv[4]||'?', away: r16wv[5]||'?', winner: qfwAI[2]||''},
-    {home: r16wv[6]||'?', away: r16wv[7]||'?', winner: qfwAI[3]||''}
-  ];
+  var r16vis = [], r16compW = [];
+  for (var i = 0; i < 8; i++) {
+    var h16 = r32w[i*2]||'?', a16 = r32w[i*2+1]||'?';
+    var w16 = r16AdvSet[h16] ? h16 : (r16AdvSet[a16] ? a16 : '');
+    r16vis.push({home:h16, away:a16, winner:w16});
+    r16compW.push(w16);
+  }
 
-  // SF: M101=qfwAI[0]vqfwAI[1], M102=qfwAI[2]vqfwAI[3]
-  var sfvis = [
-    {home: qfwAI[0]||'?', away: qfwAI[1]||'?', winner: sfwAI[0]||''},
-    {home: qfwAI[2]||'?', away: qfwAI[3]||'?', winner: sfwAI[1]||''}
-  ];
+  var qfwAI  = data.qf_w || (data.qf  ? data.qf.map(function(m){return m.winner||'';}) : []);
+  var sfwAI  = data.sf_w || (data.sf  ? data.sf.map(function(m){return m.winner||'';}) : []);
+  var qfAdvSet = {};
+  (qfwAI||[]).forEach(function(t){ if(t) qfAdvSet[t] = true; });
 
-  var finalvis = {home: sfwAI[0]||'?', away: sfwAI[1]||'?', winner: data.champion||''};
+  var qfvis = [], qfcompW = [];
+  for (var j = 0; j < 4; j++) {
+    var hqf = r16compW[j*2]||'?', aqf = r16compW[j*2+1]||'?';
+    var wqf = qfAdvSet[hqf] ? hqf : (qfAdvSet[aqf] ? aqf : '');
+    qfvis.push({home:hqf, away:aqf, winner:wqf});
+    qfcompW.push(wqf);
+  }
 
+  var sfAdvSet = {};
+  (sfwAI||[]).forEach(function(t){ if(t) sfAdvSet[t] = true; });
+
+  var sfvis = [], sfcompW = [];
+  for (var k = 0; k < 2; k++) {
+    var hsf = qfcompW[k*2]||'?', asf = qfcompW[k*2+1]||'?';
+    var wsf = sfAdvSet[hsf] ? hsf : (sfAdvSet[asf] ? asf : '');
+    sfvis.push({home:hsf, away:asf, winner:wsf});
+    sfcompW.push(wsf);
+  }
+
+  var fh = sfcompW[0]||'?', fa = sfcompW[1]||'?';
+  var fw = (data.champion && (data.champion===fh||data.champion===fa)) ? data.champion : '';
+  var finalvis = {home:fh, away:fa, winner:fw};
   var SH = 26, MH = SH * 2 + 1, CW = 140, HDR = 26, NS = 32;
   var TH = NS * SH + HDR + 4;
 
