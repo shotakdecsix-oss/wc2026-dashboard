@@ -1946,60 +1946,108 @@ function renderBracketPrediction(bracketJson) {
     var raw = typeof bracketJson === 'string' ? bracketJson : JSON.stringify(bracketJson);
     raw = raw.replace(/^```[a-z]*\s*/,'').replace(/\s*```\s*$/,'').trim();
     data = JSON.parse(raw);
-  } catch(e) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">ブラケットデータを解析できませんでした</p>'; return; }
-  if (!data || !data.r32) return;
+  } catch(e) {
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">' +
+                   'ブラケットデータを解析できませんでした</p>';
+    return;
+  }
+  if (!data || !data.r32 || data.r32.length < 16) return;
 
-  var SH = 26;  // slot height px
-  var MH = SH * 2 + 1; // match height
-  var CW = 140; // column width
-  var HDR = 26; // header height
-  var NS = 32;  // total slots
+  // ── Reorder R32 to visual bracket order ──
+  // Official R16 paths (M89-M96):
+  //   M89=M74w v M77w,  M90=M73w v M75w,  M91=M76w v M78w,  M92=M79w v M80w
+  //   M93=M83w v M84w,  M94=M81w v M82w,  M95=M86w v M88w,  M96=M85w v M87w
+  // SF: M101=M97w v M98w,  M102=M99w v M100w
+  // Visual R32 pairs → R16:
+  //   [M74,M77]→M89, [M73,M75]→M90, [M83,M84]→M93, [M81,M82]→M94
+  //   [M76,M78]→M91, [M79,M80]→M92, [M86,M88]→M95, [M85,M87]→M96
+  // AI data index: M73=0,M74=1,M75=2,M76=3,M77=4,M78=5,M79=6,M80=7
+  //                M81=8,M82=9,M83=10,M84=11,M85=12,M86=13,M87=14,M88=15
+  var r32order = [1,4, 0,2, 10,11, 8,9, 3,5, 6,7, 13,15, 12,14];
+  var r32raw = data.r32;
+  var r32vis = r32order.map(function(i){ return r32raw[i] || {home:'',away:'',winner:''}; });
+
+  // ── Slot labels in visual R32 order ──
+  var r32SlotLabels = [
+    {h:'1位E', a:'3位'},     // M74 (visual 0)
+    {h:'1位I', a:'3位'},     // M77 (visual 1)
+    {h:'2位A', a:'2位B'},    // M73 (visual 2)
+    {h:'1位F', a:'2位C'},    // M75 (visual 3)
+    {h:'2位K', a:'2位L'},    // M83 (visual 4)
+    {h:'1位H', a:'2位J'},    // M84 (visual 5)
+    {h:'1位D', a:'3位'},     // M81 (visual 6)
+    {h:'1位G', a:'3位'},     // M82 (visual 7)
+    {h:'1位C', a:'2位F'},    // M76 (visual 8)
+    {h:'2位E', a:'2位I'},    // M78 (visual 9)
+    {h:'1位A', a:'3位'},     // M79 (visual 10)
+    {h:'1位L', a:'3位'},     // M80 (visual 11)
+    {h:'1位J', a:'2位H'},    // M86 (visual 12)
+    {h:'2位D', a:'2位G'},    // M88 (visual 13)
+    {h:'1位B', a:'3位'},     // M85 (visual 14)
+    {h:'1位K', a:'3位'},     // M87 (visual 15)
+  ];
+
+  // ── Derive R16/QF/SF/Final from winner arrays ──
+  var r32w = r32vis.map(function(m){ return m.winner || ''; });
+
+  // r16_w from AI: [M89w,M90w,M91w,M92w,M93w,M94w,M95w,M96w]
+  // Visual R16 order: [M89,M90,M93,M94,M91,M92,M95,M96]
+  // → reorder indices: [0,1,4,5,2,3,6,7]
+  var r16wAI = data.r16_w || [];
+  var r16wv = [
+    r16wAI[0]||'', r16wAI[1]||'',
+    r16wAI[4]||'', r16wAI[5]||'',
+    r16wAI[2]||'', r16wAI[3]||'',
+    r16wAI[6]||'', r16wAI[7]||''
+  ];
+  var r16vis = r16wv.map(function(w, i) {
+    return {home: r32w[i*2] || '?', away: r32w[i*2+1] || '?', winner: w};
+  });
+
+  // QF visual: [M97,M98,M99,M100]
+  // M97=r16wv[0]vr16wv[1], M98=r16wv[2]vr16wv[3]
+  // M99=r16wv[4]vr16wv[5], M100=r16wv[6]vr16wv[7]
+  var qfwAI = data.qf_w || [];
+  var qfvis = [
+    {home: r16wv[0]||'?', away: r16wv[1]||'?', winner: qfwAI[0]||''},
+    {home: r16wv[2]||'?', away: r16wv[3]||'?', winner: qfwAI[1]||''},
+    {home: r16wv[4]||'?', away: r16wv[5]||'?', winner: qfwAI[2]||''},
+    {home: r16wv[6]||'?', away: r16wv[7]||'?', winner: qfwAI[3]||''}
+  ];
+
+  // SF: M101=qfwAI[0]vqfwAI[1], M102=qfwAI[2]vqfwAI[3]
+  var sfwAI = data.sf_w || [];
+  var sfvis = [
+    {home: qfwAI[0]||'?', away: qfwAI[1]||'?', winner: sfwAI[0]||''},
+    {home: qfwAI[2]||'?', away: qfwAI[3]||'?', winner: sfwAI[1]||''}
+  ];
+
+  var finalvis = {home: sfwAI[0]||'?', away: sfwAI[1]||'?', winner: data.champion||''};
+
+  var SH = 26, MH = SH * 2 + 1, CW = 140, HDR = 26, NS = 32;
   var TH = NS * SH + HDR + 4;
 
   var rounds = [
-    {key:'r32',   label:'R32',   spm:2},
-    {key:'r16',   label:'R16',   spm:4},
-    {key:'qf',    label:'QF',    spm:8},
-    {key:'sf',    label:'SF',    spm:16},
-    {key:'final', label:'決勝',  spm:32},
+    {label:'R32',  spm:2,  matches: r32vis},
+    {label:'R16',  spm:4,  matches: r16vis},
+    {label:'QF',   spm:8,  matches: qfvis},
+    {label:'SF',   spm:16, matches: sfvis},
+    {label:'決勝', spm:32, matches: [finalvis]}
   ];
-
-  // Official FIFA WC2026 R32 slot labels (M73-M88 order)
-  var r32SlotLabels = [
-    {h:'2位A', a:'2位B'},    // M73
-    {h:'1位E', a:'3位'},     // M74
-    {h:'1位F', a:'2位C'},    // M75
-    {h:'1位C', a:'2位F'},    // M76
-    {h:'1位I', a:'3位'},     // M77
-    {h:'2位E', a:'2位I'},    // M78
-    {h:'1位A', a:'3位'},     // M79
-    {h:'1位L', a:'3位'},     // M80
-    {h:'1位D', a:'3位'},     // M81
-    {h:'1位G', a:'3位'},     // M82
-    {h:'2位K', a:'2位L'},    // M83
-    {h:'1位H', a:'2位J'},    // M84
-    {h:'1位B', a:'3位'},     // M85
-    {h:'1位J', a:'2位H'},    // M86
-    {h:'1位K', a:'3位'},     // M87
-    {h:'2位D', a:'2位G'},    // M88
-  ];
-
 
   var accentGreen = '#27ae60';
   var totalW = rounds.length * CW + 90;
   var out = '<div style="position:relative;width:' + totalW + 'px;height:' + TH + 'px;font-family:sans-serif;">';
 
   rounds.forEach(function(round, ri) {
-    var matches = data[round.key];
-    if (!matches) return;
-    if (!Array.isArray(matches)) matches = [matches];
+    var matches = round.matches;
+    if (!matches || !matches.length) return;
     var colX = ri * CW;
 
-    // Header
-    out += '<div style="position:absolute;left:' + colX + 'px;top:0;width:' + CW + 'px;'
-         + 'text-align:center;font-size:0.62rem;font-weight:700;color:#888;'
-         + 'border-bottom:1px solid #ccc;padding:3px 0;box-sizing:border-box;">'
-         + round.label + '</div>';
+    out += '<div style="position:absolute;left:' + colX + 'px;top:0;width:' + CW + 'px;' +
+           'text-align:center;font-size:0.62rem;font-weight:700;color:#888;' +
+           'border-bottom:1px solid #ccc;padding:3px 0;box-sizing:border-box;">' +
+           round.label + '</div>';
 
     matches.forEach(function(m, mi) {
       if (!m) return;
@@ -2009,70 +2057,50 @@ function renderBracketPrediction(bracketJson) {
       var homeWin = m.winner && m.home && m.winner === m.home;
       var awayWin = m.winner && m.away && m.winner === m.away;
 
-      out += '<div style="position:absolute;left:' + (colX+6) + 'px;top:' + top + 'px;'
-           + 'width:' + mw + 'px;border:1px solid #ccc;border-radius:3px;overflow:hidden;">';
-      var r32sl = (round.key === 'r32' && r32SlotLabels[mi]) ? r32SlotLabels[mi] : null;
-      var homeSlotLabel = r32sl ? '<span style="font-size:0.5rem;opacity:0.7;margin-left:3px;font-weight:400;">[' + r32sl.h + ']</span>' : '';
-      out += '<div style="padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-           + (homeWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
-           + '">' + (m.home||'?') + homeSlotLabel + '</div>';
-      var awaySlotLabel = r32sl ? '<span style="font-size:0.5rem;opacity:0.7;margin-left:3px;font-weight:400;">[' + r32sl.a + ']</span>' : '';
-      out += '<div style="border-top:1px solid #ccc;padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-           + (awayWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
-           + '">' + (m.away||'?') + awaySlotLabel + '</div>';
+      var r32sl = (ri === 0 && r32SlotLabels[mi]) ? r32SlotLabels[mi] : null;
+      var hsl = r32sl ? '<span style="font-size:0.5rem;opacity:0.7;margin-left:3px;font-weight:400;">[' + r32sl.h + ']</span>' : '';
+      var asl = r32sl ? '<span style="font-size:0.5rem;opacity:0.7;margin-left:3px;font-weight:400;">[' + r32sl.a + ']</span>' : '';
+
+      out += '<div style="position:absolute;left:' + (colX+6) + 'px;top:' + top + 'px;' +
+             'width:' + mw + 'px;border:1px solid #ccc;border-radius:3px;overflow:hidden;">';
+      out += '<div style="padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+             (homeWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;') +
+             '">' + (m.home||'?') + hsl + '</div>';
+      out += '<div style="border-top:1px solid #ccc;padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+             (awayWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;') +
+             '">' + (m.away||'?') + asl + '</div>';
       out += '</div>';
 
-      // Connector lines
+      // Connector lines to next round
       if (ri < rounds.length - 1) {
-        var myY = HDR + centerSlot * SH;  // center Y of this match
+        var myY    = HDR + centerSlot * SH;
         var rightX = colX + CW - 10;
-        var nextRound = rounds[ri + 1];
-        var pairMi = Math.floor(mi / 2);
+        var nextRound  = rounds[ri + 1];
+        var pairMi     = Math.floor(mi / 2);
         var nextCenter = pairMi * nextRound.spm + nextRound.spm / 2.0;
-        var nextY = HDR + nextCenter * SH;
-        var midX = rightX + (CW - mw - 16) / 2 + (mi % 2 === 0 ? 5 : 5);
-
-        // Horizontal from match right to connector X
-        out += '<div style="position:absolute;top:' + myY + 'px;left:' + (colX + mw + 8) + 'px;'
-             + 'width:' + (midX - colX - mw - 8 + 2) + 'px;height:1px;background:#ccc;"></div>';
-
-        // Vertical line connecting pair (draw only from even index)
-        if (mi % 2 === 0) {
-          var pairCenter = (mi + 1) * round.spm + round.spm / 2.0;
-          var pairY = HDR + pairCenter * SH;
-          var vTop = Math.min(myY, pairY);
-          var vH = Math.abs(pairY - myY);
-          out += '<div style="position:absolute;left:' + midX + 'px;top:' + vTop + 'px;'
-               + 'width:1px;height:' + vH + 'px;background:#ccc;"></div>';
-          // Horizontal from midX to next column
-          out += '<div style="position:absolute;top:' + nextY + 'px;left:' + midX + 'px;'
-               + 'width:' + ((ri+1)*CW + 6 - midX) + 'px;height:1px;background:#ccc;"></div>';
-        }
+        var nextY  = HDR + nextCenter * SH;
+        out += '<svg style="position:absolute;left:' + rightX + 'px;top:0;overflow:visible;pointer-events:none;" width="1" height="1">' +
+               '<line x1="0" y1="' + myY  + '" x2="10" y2="' + myY  + '" stroke="#ccc" stroke-width="1"/>' +
+               '<line x1="10" y1="' + myY  + '" x2="10" y2="' + nextY + '" stroke="#ccc" stroke-width="1"/>' +
+               '<line x1="10" y1="' + nextY + '" x2="20" y2="' + nextY + '" stroke="#ccc" stroke-width="1"/>' +
+               '</svg>';
       }
     });
   });
 
-  // Champion
-  if (data.champion) {
-    var cx = rounds.length * CW + 12;
-    var cy = TH / 2 - 18;
-    out += '<div style="position:absolute;left:' + cx + 'px;top:' + cy + 'px;'
-         + 'text-align:center;font-size:0.8rem;font-weight:700;color:#e67e22;">'
-         + '🏆<br>' + data.champion + '</div>';
-  }
-
-  out += '</div>';
-
-  // 3rd place note
-  var thirdHtml = '';
+  var champX = rounds.length * CW;
+  out += '<div style="position:absolute;left:' + champX + 'px;top:' + (HDR + NS/2*SH - 20) + 'px;' +
+         'padding:4px 8px;background:#f39c12;color:#fff;border-radius:4px;font-size:0.65rem;font-weight:700;white-space:nowrap;">' +
+         '&#127942; ' + (data.champion||'?') + '</div>';
   if (data.third) {
-    thirdHtml = '<div style="margin-top:6px;font-size:0.7rem;color:#888;">'
-      + '3位決定戦: ' + (data.third.home||'?') + ' vs ' + (data.third.away||'?')
-      + ' → <strong>' + (data.third.winner||'?') + '</strong></div>';
+    out += '<div style="position:absolute;left:' + champX + 'px;top:' + (HDR + NS/2*SH + 10) + 'px;' +
+           'padding:2px 6px;background:#95a5a6;color:#fff;border-radius:3px;font-size:0.58rem;white-space:nowrap;">' +
+           '3&#20301;: ' + data.third + '</div>';
   }
-
-  el.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">' + out + '</div>' + thirdHtml;
+  out += '</div>';
+  el.innerHTML = out;
 }
+
 
 function renderAIAnalysis(ai) {
   if (!ai) return;
