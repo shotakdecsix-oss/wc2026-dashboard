@@ -1964,6 +1964,24 @@ function renderBracketPrediction(bracketJson) {
     {key:'final', label:'決勝',  spm:32},
   ];
 
+  // Build team→slot map from live standings data
+  var teamSlotMap = {};
+  try {
+    var ld = window.__wc2026liveData || (typeof liveData !== 'undefined' ? liveData : null);
+    if (ld && ld.groups) {
+      ld.groups.forEach(function(g) {
+        if (!g.teams) return;
+        g.teams.forEach(function(t, idx) {
+          var pos = idx + 1;
+          var label = g.id + pos + '位';
+          // Match by both name and flag-stripped name
+          teamSlotMap[t.name] = label;
+        });
+      });
+    }
+  } catch(e) {}
+
+
   var accentGreen = '#27ae60';
   var totalW = rounds.length * CW + 90;
   var out = '<div style="position:relative;width:' + totalW + 'px;height:' + TH + 'px;font-family:sans-serif;">';
@@ -1990,12 +2008,14 @@ function renderBracketPrediction(bracketJson) {
 
       out += '<div style="position:absolute;left:' + (colX+6) + 'px;top:' + top + 'px;'
            + 'width:' + mw + 'px;border:1px solid #ccc;border-radius:3px;overflow:hidden;">';
+      var homeSlotLabel = (round.key === 'r32' && teamSlotMap[m.home]) ? '<span style="font-size:0.5rem;opacity:0.65;margin-left:2px;">(' + teamSlotMap[m.home] + ')</span>' : '';
       out += '<div style="padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
            + (homeWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
-           + '">' + (m.home||'?') + '</div>';
+           + '">' + (m.home||'?') + homeSlotLabel + '</div>';
+      var awaySlotLabel = (round.key === 'r32' && teamSlotMap[m.away]) ? '<span style="font-size:0.5rem;opacity:0.65;margin-left:2px;">(' + teamSlotMap[m.away] + ')</span>' : '';
       out += '<div style="border-top:1px solid #ccc;padding:1px 4px;font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
            + (awayWin ? 'background:' + accentGreen + ';color:#fff;font-weight:700;' : 'color:#aaa;background:#f8f8f8;')
-           + '">' + (m.away||'?') + '</div>';
+           + '">' + (m.away||'?') + awaySlotLabel + '</div>';
       out += '</div>';
 
       // Connector lines
