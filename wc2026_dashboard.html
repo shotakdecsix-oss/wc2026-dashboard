@@ -1964,20 +1964,25 @@ function renderBracketPrediction(bracketJson) {
     {key:'final', label:'決勝',  spm:32},
   ];
 
-  // Build team→slot map from live standings data
+  // Build team→slot map: prefer AI-provided slots, fall back to live standings
   var teamSlotMap = {};
   try {
-    var ld = window.__wc2026liveData || (typeof liveData !== 'undefined' ? liveData : null);
-    if (ld && ld.groups) {
-      ld.groups.forEach(function(g) {
-        if (!g.teams) return;
-        g.teams.forEach(function(t, idx) {
-          var pos = idx + 1;
-          var label = g.id + pos + '位';
-          // Match by both name and flag-stripped name
-          teamSlotMap[t.name] = label;
-        });
+    if (data.slots && typeof data.slots === 'object') {
+      // AI-provided slot map (most accurate - uses predicted final positions)
+      Object.keys(data.slots).forEach(function(team) {
+        teamSlotMap[team] = data.slots[team];
       });
+    } else {
+      // Fallback: current live standings
+      var ld = window.__wc2026liveData || (typeof liveData !== 'undefined' ? liveData : null);
+      if (ld && ld.groups) {
+        ld.groups.forEach(function(g) {
+          if (!g.teams) return;
+          g.teams.forEach(function(t, i) {
+            teamSlotMap[t.name] = g.id + (i+1) + '位';
+          });
+        });
+      }
     }
   } catch(e) {}
 
