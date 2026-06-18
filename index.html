@@ -2140,6 +2140,27 @@ function renderBracketPrediction(bracketJson) {
 }
 
 
+// 試合スコアから順位表を再計算（AIの standings は信頼しない）
+function calcStandingsFromMatches(matches) {
+  var teams = {};
+  matches.forEach(function(m) {
+    var h = m.home, a = m.away;
+    if (!teams[h]) teams[h] = {team:h, played:0, won:0, drawn:0, lost:0, gf:0, ga:0, pts:0};
+    if (!teams[a]) teams[a] = {team:a, played:0, won:0, drawn:0, lost:0, gf:0, ga:0, pts:0};
+    var hs = m.home_score, as2 = m.away_score;
+    if (hs == null || as2 == null) return;
+    teams[h].played++; teams[a].played++;
+    teams[h].gf += hs; teams[h].ga += as2;
+    teams[a].gf += as2; teams[a].ga += hs;
+    if (hs > as2)       { teams[h].won++;   teams[h].pts += 3; teams[a].lost++; }
+    else if (hs < as2)  { teams[a].won++;   teams[a].pts += 3; teams[h].lost++; }
+    else                { teams[h].drawn++; teams[h].pts++;     teams[a].drawn++; teams[a].pts++; }
+  });
+  return Object.values(teams).sort(function(a, b) {
+    return b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf;
+  });
+}
+
 function renderGroupPredictionFull(ai) {
   var el = document.getElementById('ai-group-text');
   if (!el) return;
@@ -2166,7 +2187,7 @@ function renderGroupPredictionFull(ai) {
     var gd = groups[g];
     if (!gd) return;
     var matches = gd.matches || [];
-    var standings = gd.standings || [];
+    var standings = matches.length ? calcStandingsFromMatches(matches) : (gd.standings || []);
     html += '<div class="gp-group-card">';
     html += '<div class="gp-group-hd">⚽ グループ ' + g + '</div>';
     // Matches
