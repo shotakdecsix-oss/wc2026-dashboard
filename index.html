@@ -1960,7 +1960,7 @@ function parseAiText(txt) {
 }
 
 
-function renderBracketPrediction(bracketJson) {
+function renderBracketPrediction(bracketJson, groupSimJson) {
   var el = document.getElementById('bracket-prediction');
   if (!el) return;
   var data;
@@ -1988,6 +1988,32 @@ function renderBracketPrediction(bracketJson) {
   var r32order = [1,4, 0,2, 10,11, 8,9, 3,5, 6,7, 13,15, 12,14];
   var r32raw = data.r32;
   var r32vis = r32order.map(function(i){ return r32raw[i] || {home:'',away:'',winner:''}; });
+
+  // グループ順位が修正されていればR32チーム名を上書き
+  (function() {
+    if (!groupSimJson) return;
+    var gsParsed = null;
+    try {
+      var gsStr = groupSimJson.trim().replace(/^```[a-z]*\s*/,'').replace(/\s*```\s*$/,'');
+      var gi0 = gsStr.indexOf('{'), gi1 = gsStr.lastIndexOf('}');
+      if (gi0 !== -1 && gi1 !== -1) gsParsed = JSON.parse(gsStr.slice(gi0, gi1 + 1));
+    } catch(e) {}
+    if (!gsParsed || !gsParsed.groups) return;
+    var posLookup = buildGroupPosLookup(gsParsed);
+    var thirds = gsParsed.advancing_thirds || [];
+    var thirdsIdx = 0;
+    r32vis.forEach(function(match, visIdx) {
+      var label = r32SlotLabels[visIdx] || {};
+      if (label.h) {
+        if (label.h !== '3位') { match.home = posLookup[label.h] || match.home; }
+        else if (thirds[thirdsIdx] !== undefined) { match.home = thirds[thirdsIdx++]; }
+      }
+      if (label.a) {
+        if (label.a !== '3位') { match.away = posLookup[label.a] || match.away; }
+        else if (thirds[thirdsIdx] !== undefined) { match.away = thirds[thirdsIdx++]; }
+      }
+    });
+  })();
 
   // ── Slot labels in visual R32 order ──
   var r32SlotLabels = [
@@ -2140,6 +2166,42 @@ function renderBracketPrediction(bracketJson) {
 }
 
 
+// 試合スコアから順位表を再計算（AIの standings は信頼しない）
+function calcStandingsFromMatches(matches) {
+  var teams = {};
+  matches.forEach(function(m) {
+    var h = m.home, a = m.away;
+    if (!teams[h]) teams[h] = {team:h, played:0, won:0, drawn:0, lost:0, gf:0, ga:0, pts:0};
+    if (!teams[a]) teams[a] = {team:a, played:0, won:0, drawn:0, lost:0, gf:0, ga:0, pts:0};
+    var hs = m.home_score, as2 = m.away_score;
+    if (hs == null || as2 == null) return;
+    teams[h].played++; teams[a].played++;
+    teams[h].gf += hs; teams[h].ga += as2;
+    teams[a].gf += as2; teams[a].ga += hs;
+    if (hs > as2)       { teams[h].won++;   teams[h].pts += 3; teams[a].lost++; }
+    else if (hs < as2)  { teams[a].won++;   teams[a].pts += 3; teams[h].lost++; }
+    else                { teams[h].drawn++; teams[h].pts++;     teams[a].drawn++; teams[a].pts++; }
+  });
+  return Object.values(teams).sort(function(a, b) {
+    return b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf;
+  });
+}
+
+// グループ順位テーブルから「1位A」→チーム名 の対応表を構築
+function buildGroupPosLookup(gs) {
+  var lookup = {};
+  'ABCDEFGHIJKL'.split('').forEach(function(g) {
+    var gd = gs.groups && gs.groups[g];
+    if (!gd) return;
+    var matches = gd.matches || [];
+    var standings = matches.length ? calcStandingsFromMatches(matches) : (gd.standings || []);
+    if (standings[0]) lookup['1位' + g] = standings[0].team;
+    if (standings[1]) lookup['2位' + g] = standings[1].team;
+    if (standings[2]) lookup['3位' + g] = standings[2].team;
+  });
+  return lookup;
+}
+
 function renderGroupPredictionFull(ai) {
   var el = document.getElementById('ai-group-text');
   if (!el) return;
@@ -2166,7 +2228,7 @@ function renderGroupPredictionFull(ai) {
     var gd = groups[g];
     if (!gd) return;
     var matches = gd.matches || [];
-    var standings = gd.standings || [];
+    var standings = matches.length ? calcStandingsFromMatches(matches) : (gd.standings || []);
     html += '<div class="gp-group-card">';
     html += '<div class="gp-group-hd">⚽ グループ ' + g + '</div>';
     // Matches
@@ -2229,7 +2291,7 @@ function renderAIAnalysis(ai) {
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
-  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction);
+  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction, ai.groupSimulation);
   var upd = document.getElementById('ai-updated-time');
   if (upd && ai.generatedAt) upd.textContent = '最終更新: ' + ai.generatedAt;
 }
