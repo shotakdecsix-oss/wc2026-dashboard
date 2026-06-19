@@ -1960,7 +1960,7 @@ function parseAiText(txt) {
 }
 
 
-function renderBracketPrediction(bracketJson) {
+function renderBracketPrediction(bracketJson, groupSimJson) {
   var el = document.getElementById('bracket-prediction');
   if (!el) return;
   var data;
@@ -1973,21 +1973,18 @@ function renderBracketPrediction(bracketJson) {
                    'ブラケットデータを解析できませんでした</p>';
     return;
   }
-  if (!data || !data.r32 || data.r32.length < 16) return;
-
-  // ── Reorder R32 to visual bracket order ──
-  // Official R16 paths (M89-M96):
-  //   M89=M74w v M77w,  M90=M73w v M75w,  M91=M76w v M78w,  M92=M79w v M80w
-  //   M93=M83w v M84w,  M94=M81w v M82w,  M95=M86w v M88w,  M96=M85w v M87w
-  // SF: M101=M97w v M98w,  M102=M99w v M100w
-  // Visual R32 pairs → R16:
-  //   [M74,M77]→M89, [M73,M75]→M90, [M83,M84]→M93, [M81,M82]→M94
-  //   [M76,M78]→M91, [M79,M80]→M92, [M86,M88]→M95, [M85,M87]→M96
-  // AI data index: M73=0,M74=1,M75=2,M76=3,M77=4,M78=5,M79=6,M80=7
-  //                M81=8,M82=9,M83=10,M84=11,M85=12,M86=13,M87=14,M88=15
-  var r32order = [1,4, 0,2, 10,11, 8,9, 3,5, 6,7, 13,15, 12,14];
-  var r32raw = data.r32;
-  var r32vis = r32order.map(function(i){ return r32raw[i] || {home:'',away:'',winner:''}; });
+  // ── R32対戦カードの確定（グループ順位優先・既存AI予測のチーム名は使わない） ──
+  var r32vis = null;
+  var gsParsedBkt = parseGroupSimJson(groupSimJson);
+  if (gsParsedBkt) {
+    r32vis = buildR32FromGroupSim(gsParsedBkt);
+  }
+  if (!r32vis) {
+    if (!data || !data.r32 || data.r32.length < 16) return;
+    var r32order = [1,4, 0,2, 10,11, 8,9, 3,5, 6,7, 13,15, 12,14];
+    var r32raw = data.r32;
+    r32vis = r32order.map(function(i){ return r32raw[i] || {home:'',away:'',winner:''}; });
+  }
 
   // ── Slot labels in visual R32 order ──
   var r32SlotLabels = [
@@ -2009,58 +2006,52 @@ function renderBracketPrediction(bracketJson) {
     {h:'1位K', a:'3位'},     // M87 (visual 15)
   ];
 
-  // ── Derive R16/QF/SF/Final from winner arrays ──
+  // ── Derive R16/QF/SF/Final：強度スコアで1試合1試合積み上げ ──
+  // グループ成績から強度スコアを計算、既存AI予測の勝者データは使わない
+  var teamStr = gsParsedBkt ? buildTeamStrengths(gsParsedBkt) : {};
+  function pw(h, a) {   // predict winner
+    if (!h) return a||''; if (!a) return h;
+    return (teamStr[h]||0) >= (teamStr[a]||0) ? h : a;
+  }
+
+  // R32: 各試合の勝者を強度スコアで確定
+  r32vis.forEach(function(m) { m.winner = pw(m.home, m.away); });
   var r32w = r32vis.map(function(m){ return m.winner || ''; });
 
-  // r16_w from AI: [M89w,M90w,M91w,M92w,M93w,M94w,M95w,M96w]
-  // Visual R16 order: [M89,M90,M93,M94,M91,M92,M95,M96]
-  // → reorder indices: [0,1,4,5,2,3,6,7]
-  // Support both new format (r16_w array) and old format (r16 array of match objects)
-  var r16wAI = data.r16_w ||
-               (data.r16 ? data.r16.map(function(m){return m.winner||'';}) : []);
-  var qfwAI  = data.qf_w ||
-               (data.qf ? data.qf.map(function(m){return m.winner||'';}) : []);
-  var sfwAI  = data.sf_w ||
-               (data.sf ? data.sf.map(function(m){return m.winner||'';}) :
-                (data.final ? [data.final.home||'', data.final.away||''] : []));
-  // Intersection approach: for each match, use AI's advancement set to pick winner
+  // r16AdvSet は互換性のため空にしておく（下流で使わない）
   var r16AdvSet = {};
-  (r16wAI||[]).forEach(function(t){ if(t) r16AdvSet[t] = true; });
 
   var r16vis = [], r16compW = [];
   for (var i = 0; i < 8; i++) {
     var h16 = r32w[i*2]||'?', a16 = r32w[i*2+1]||'?';
-    var w16 = r16AdvSet[h16] ? h16 : (r16AdvSet[a16] ? a16 : '');
+    var w16 = pw(h16, a16);
     r16vis.push({home:h16, away:a16, winner:w16});
     r16compW.push(w16);
   }
 
-  var qfwAI  = data.qf_w || (data.qf  ? data.qf.map(function(m){return m.winner||'';}) : []);
-  var sfwAI  = data.sf_w || (data.sf  ? data.sf.map(function(m){return m.winner||'';}) : []);
+  // qfwAI/sfwAI は不使用（強度スコアで計算）
   var qfAdvSet = {};
-  (qfwAI||[]).forEach(function(t){ if(t) qfAdvSet[t] = true; });
 
   var qfvis = [], qfcompW = [];
   for (var j = 0; j < 4; j++) {
     var hqf = r16compW[j*2]||'?', aqf = r16compW[j*2+1]||'?';
-    var wqf = qfAdvSet[hqf] ? hqf : (qfAdvSet[aqf] ? aqf : '');
+    var wqf = pw(hqf, aqf);
     qfvis.push({home:hqf, away:aqf, winner:wqf});
     qfcompW.push(wqf);
   }
 
   var sfAdvSet = {};
-  (sfwAI||[]).forEach(function(t){ if(t) sfAdvSet[t] = true; });
 
   var sfvis = [], sfcompW = [];
   for (var k = 0; k < 2; k++) {
     var hsf = qfcompW[k*2]||'?', asf = qfcompW[k*2+1]||'?';
-    var wsf = sfAdvSet[hsf] ? hsf : (sfAdvSet[asf] ? asf : '');
+    var wsf = pw(hsf, asf);
     sfvis.push({home:hsf, away:asf, winner:wsf});
     sfcompW.push(wsf);
   }
 
   var fh = sfcompW[0]||'?', fa = sfcompW[1]||'?';
-  var fw = (data.champion && (data.champion===fh||data.champion===fa)) ? data.champion : '';
+  var fw = pw(fh, fa);
   var finalvis = {home:fh, away:fa, winner:fw};
   var SH = 26, MH = SH * 2 + 1, CW = 140, HDR = 26, NS = 32;
   var TH = NS * SH + HDR + 4;
@@ -2129,16 +2120,109 @@ function renderBracketPrediction(bracketJson) {
   var champX = rounds.length * CW;
   out += '<div style="position:absolute;left:' + champX + 'px;top:' + (HDR + NS/2*SH - 20) + 'px;' +
          'padding:4px 8px;background:#f39c12;color:#fff;border-radius:4px;font-size:0.65rem;font-weight:700;white-space:nowrap;">' +
-         '&#127942; ' + (data.champion||'?') + '</div>';
-  if (data.third) {
-    out += '<div style="position:absolute;left:' + champX + 'px;top:' + (HDR + NS/2*SH + 10) + 'px;' +
-           'padding:2px 6px;background:#95a5a6;color:#fff;border-radius:3px;font-size:0.58rem;white-space:nowrap;">' +
-           '3&#20301;: ' + data.third + '</div>';
-  }
+         '&#127942; ' + (fw||'?') + '</div>';
+
   out += '</div>';
+  // 優勝国予想セクションをシミュレーション結果で更新
+  var winnerEl = document.getElementById('ai-winner-text');
+  if (winnerEl && fw) {
+    winnerEl.innerHTML =
+      '<div style="text-align:center;padding:20px 8px;">'
+      + '<div style="font-size:1.5rem;font-weight:700;margin-bottom:8px;">🏆 ' + fw + '</div>'
+      + '<div style="font-size:0.72rem;color:var(--muted)">グループステージ成績シミュレーションによる優勝予測</div>'
+      + '</div>';
+  }
   el.innerHTML = out;
 }
 
+
+// ── グループ順位・R32構築・トーナメント予測ヘルパー ──────────────────────────
+
+// 試合スコアから順位表を再計算（AIの standings は使わない）
+function calcStandingsFromMatches(matches) {
+  var t = {};
+  matches.forEach(function(m) {
+    var h=m.home,a=m.away;
+    if(!t[h])t[h]={team:h,played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0};
+    if(!t[a])t[a]={team:a,played:0,won:0,drawn:0,lost:0,gf:0,ga:0,pts:0};
+    var hs=m.home_score,as2=m.away_score;
+    if(hs==null||as2==null)return;
+    t[h].played++;t[a].played++;t[h].gf+=hs;t[h].ga+=as2;t[a].gf+=as2;t[a].ga+=hs;
+    if(hs>as2){t[h].won++;t[h].pts+=3;t[a].lost++;}
+    else if(hs<as2){t[a].won++;t[a].pts+=3;t[h].lost++;}
+    else{t[h].drawn++;t[h].pts++;t[a].drawn++;t[a].pts++;}
+  });
+  return Object.values(t).sort(function(a,b){
+    return b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf;
+  });
+}
+
+// グループ順位ルックアップ（'1位A'→チーム名）を構築
+function buildGroupPosLookup(gs) {
+  var lk={};
+  'ABCDEFGHIJKL'.split('').forEach(function(g){
+    var gd=gs.groups&&gs.groups[g];if(!gd)return;
+    var ms=gd.matches||[];
+    var st=ms.length?calcStandingsFromMatches(ms):(gd.standings||[]);
+    if(st[0])lk['1位'+g]=st[0].team;
+    if(st[1])lk['2位'+g]=st[1].team;
+    if(st[2])lk['3位'+g]=st[2].team;
+  });
+  return lk;
+}
+
+// WC2026 R32スロット構造（ビジュアル順・固定）
+var WC2026_R32_SLOTS=[
+  {h:'1位E',a:'3位'},{h:'1位I',a:'3位'},{h:'2位A',a:'2位B'},{h:'1位F',a:'2位C'},
+  {h:'2位K',a:'2位L'},{h:'1位H',a:'2位J'},{h:'1位D',a:'3位'},{h:'1位G',a:'3位'},
+  {h:'1位C',a:'2位F'},{h:'2位E',a:'2位I'},{h:'1位A',a:'3位'},{h:'1位L',a:'3位'},
+  {h:'1位J',a:'2位H'},{h:'2位D',a:'2位G'},{h:'1位B',a:'3位'},{h:'1位K',a:'3位'}
+];
+
+// グループシミュレーションからR32対戦カードを構築
+function buildR32FromGroupSim(gsParsed) {
+  var lk=buildGroupPosLookup(gsParsed);
+  var thirds=[];
+  'ABCDEFGHIJKL'.split('').forEach(function(g){
+    var gd=gsParsed.groups&&gsParsed.groups[g];if(!gd)return;
+    var ms=gd.matches||[];
+    var st=ms.length?calcStandingsFromMatches(ms):(gd.standings||[]);
+    if(st[2])thirds.push({team:st[2].team,pts:st[2].pts||0,gd:(st[2].gf||0)-(st[2].ga||0),gf:st[2].gf||0});
+  });
+  thirds.sort(function(a,b){return b.pts-a.pts||b.gd-a.gd||b.gf-a.gf;});
+  var adv3=thirds.slice(0,8).map(function(t){return t.team;}),t3i=0;
+  return WC2026_R32_SLOTS.map(function(s){
+    var h=s.h!=='3位'?(lk[s.h]||''):(adv3[t3i++]||'');
+    var a=s.a!=='3位'?(lk[s.a]||''):(adv3[t3i++]||'');
+    return {home:h,away:a,winner:''};
+  });
+}
+
+// グループステージ成績からチーム強度スコアを構築
+// 強度 = グループ内順位ボーナス×100 + 勝ち点×10 + 得失点差 + 得点/10
+function buildTeamStrengths(gsParsed) {
+  var s={};
+  'ABCDEFGHIJKL'.split('').forEach(function(g){
+    var gd=gsParsed.groups&&gsParsed.groups[g];if(!gd)return;
+    var ms=gd.matches||[];
+    var st=ms.length?calcStandingsFromMatches(ms):(gd.standings||[]);
+    st.forEach(function(t,rank){
+      s[t.team]=(st.length-rank)*100+(t.pts||0)*10+((t.gf||0)-(t.ga||0))+(t.gf||0)/10;
+    });
+  });
+  return s;
+}
+
+// groupSimulation JSON文字列をパース
+function parseGroupSimJson(raw) {
+  if(!raw)return null;
+  try{
+    var s=raw.trim().replace(/^```[a-z]*\s*/,'').replace(/\s*```\s*$/,'');
+    var i0=s.indexOf('{'),i1=s.lastIndexOf('}');
+    if(i0!==-1&&i1!==-1){var g=JSON.parse(s.slice(i0,i1+1));if(g&&g.groups)return g;}
+  }catch(e){}
+  return null;
+}
 
 function renderGroupPredictionFull(ai) {
   var el = document.getElementById('ai-group-text');
@@ -2166,7 +2250,7 @@ function renderGroupPredictionFull(ai) {
     var gd = groups[g];
     if (!gd) return;
     var matches = gd.matches || [];
-    var standings = gd.standings || [];
+    var standings = (gd.matches&&gd.matches.length)?calcStandingsFromMatches(gd.matches):(gd.standings||[]);
     html += '<div class="gp-group-card">';
     html += '<div class="gp-group-hd">⚽ グループ ' + g + '</div>';
     // Matches
@@ -2229,7 +2313,7 @@ function renderAIAnalysis(ai) {
   set('ai-japan-text', ai.japanScenario);
   set('ai-winner-text', ai.winnerPrediction);
   set('ai-tactical-text', ai.tacticalTrend);
-  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction);
+  if (ai.bracketPrediction) renderBracketPrediction(ai.bracketPrediction, ai.groupSimulation);
   var upd = document.getElementById('ai-updated-time');
   if (upd && ai.generatedAt) upd.textContent = '最終更新: ' + ai.generatedAt;
 }
