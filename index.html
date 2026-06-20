@@ -2124,55 +2124,75 @@ function renderBracketPrediction(bracketJson, groupSimJson) {
     qfvis.forEach(function(m){ if(m.home)qfTeams.push(m.home); if(m.away)qfTeams.push(m.away); });
     if (!qfTeams.length || !gsParsedBkt) return;
 
-    // 最終成績でランク付け（fh/fa/fw はスコープ内）
+    // 最終成績でランク付け
+    // fh/fa=ファイナリスト fw=優勝 はすでにスコープに存在
     var champion = fw || '';
     var runnerUp = (fh && fa) ? (fh === champion ? fa : fh) : '';
+    // SF敗者 = QF勝者のうちファイナリストでない2チーム
     var qfWinners = qfvis.map(function(m){ return m.winner || ''; });
     var sfLosers = qfWinners.filter(function(t){ return t && t !== fh && t !== fa; });
+    // QF敗者
     var qfLosers = [];
     qfvis.forEach(function(m){
       if(!m.winner)return;
-      var loser=m.winner===m.home?m.away:m.home;
+      var loser = m.winner===m.home ? m.away : m.home;
       if(loser) qfLosers.push(loser);
     });
+
     var rankOrder = {};
     if(champion) rankOrder[champion] = 0;
     if(runnerUp) rankOrder[runnerUp] = 1;
     sfLosers.forEach(function(t,i){ if(!(t in rankOrder)) rankOrder[t] = 2+i; });
     qfLosers.forEach(function(t,i){ if(!(t in rankOrder)) rankOrder[t] = 4+i; });
+
     qfTeams.sort(function(a,b){
       return ((a in rankOrder)?rankOrder[a]:99) - ((b in rankOrder)?rankOrder[b]:99);
     });
+
     function getBadge(team) {
-      var r=rankOrder[team];
+      var r = rankOrder[team];
       if(r===0) return {icon:'🏆',label:'優勝',    bg:'#fffbea',border:'#f1c40f'};
       if(r===1) return {icon:'🥈',label:'準優勝',  bg:'#f8f9fa',border:'#aaa'};
       if(r<=3)  return {icon:'🥉',label:'ベスト4', bg:'#fff5ee',border:'#e67e22'};
                 return {icon:'⚽',label:'ベスト8', bg:'#fff',   border:'#ccc'};
     }
+
+    // グループステージ情報をDEMO_SCHEDULE（試合日程・結果エリア）から直接集計
+    // status:'FINISHED' かつ score があるものだけを使う
+    // data.matches（updater取得の全試合）を優先、なければDEMO_SCHEDULEにフォールバック
     var tInfo = {};
-    var sched=(typeof DEMO_SCHEDULE!=='undefined')?DEMO_SCHEDULE:[];
-    sched.forEach(function(m){
-      if(m.status!=='FINISHED'||!m.score||!m.group||!m.homeTeam||!m.awayTeam)return;
-      var home=m.homeTeam.name,away=m.awayTeam.name,hs=m.score.home,as_=m.score.away;
+    var sched = (data && data.matches && data.matches.length) ? data.matches
+                : ((typeof DEMO_SCHEDULE !== 'undefined') ? DEMO_SCHEDULE : []);
+    sched.forEach(function(m) {
+      if (m.status !== 'FINISHED' || !m.score || !m.group || !m.homeTeam || !m.awayTeam) return;
+      var home = m.homeTeam.name, away = m.awayTeam.name;
+      var hs = m.score.home, as_ = m.score.away;
       [{team:home,gf:hs,ga:as_},{team:away,gf:as_,ga:hs}].forEach(function(side){
-        if(!tInfo[side.team])tInfo[side.team]={group:m.group,played:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
+        if (!tInfo[side.team]) tInfo[side.team]={group:m.group,played:0,w:0,d:0,l:0,gf:0,ga:0,pts:0};
         var t=tInfo[side.team];
-        t.played++;t.gf+=side.gf;t.ga+=side.ga;
+        t.played++; t.gf+=side.gf; t.ga+=side.ga;
         if(side.gf>side.ga){t.w++;t.pts+=3;}else if(side.gf===side.ga){t.d++;t.pts++;}else{t.l++;}
       });
     });
+    // GDと順位を算出
     var groupTeams={};
     Object.keys(tInfo).forEach(function(team){
-      var t=tInfo[team];t.gd=t.gf-t.ga;
+      var t=tInfo[team]; t.gd=t.gf-t.ga;
       if(!groupTeams[t.group])groupTeams[t.group]=[];
       groupTeams[t.group].push(team);
     });
     Object.keys(groupTeams).forEach(function(g){
-      groupTeams[g].sort(function(a,b){var ta=tInfo[a],tb=tInfo[b];return(tb.pts-ta.pts)||(tb.gd-ta.gd)||(tb.gf-ta.gf);});
+      groupTeams[g].sort(function(a,b){
+        var ta=tInfo[a],tb=tInfo[b];
+        return (tb.pts-ta.pts)||(tb.gd-ta.gd)||(tb.gf-ta.gf);
+      });
       groupTeams[g].forEach(function(team,i){tInfo[team].rank=i+1;});
     });
-    var allGroupsDone=Object.keys(tInfo).length>=32;
+
+    // ノックアウト撃破実績：実試合のみ（シミュレーション含むr32vis等は使わない）
+    // data.r32/r16/qf にシミュレーション結果が混入するケースがあるため
+    // グループ全体が終わっていない間はノックアウト実績は表示しない
+    var allGroupsDone = Object.keys(tInfo).length >= 32; // 32チーム以上登録 = 全グループ完了目安
     var beaten={};
     if(allGroupsDone){
       [data.r32,data.r16,data.qf].forEach(function(arr){
@@ -2184,68 +2204,94 @@ function renderBracketPrediction(bracketJson, groupSimJson) {
         });
       });
     }
+
     var qfHtml='<div style="margin-top:18px;">'
       +'<div style="font-size:0.8rem;font-weight:700;color:#111;margin-bottom:10px;'
       +'border-bottom:2px solid #27ae60;padding-bottom:4px;">⚡ ベスト8 チーム評価</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">';
+
     qfTeams.forEach(function(team){
       var info=tInfo[team]||{};
       var bs=beaten[team]||[];
-      var gdStr=(info.gd>=0?'+':'')+info.gd;
+      var gdStr = (typeof info.gd !== 'undefined') ? ((info.gd >= 0 ? '+' : '') + info.gd) : '';
       var rankLbl=info.rank===1?'グループ1位通過':info.rank===2?'グループ2位通過':'3位通過';
       var badge=getBadge(team);
       var r=rankOrder[team];
+
       // ── 実績（消化済み試合に基づく現状分析） ──
-      var played=info.played||0,w=info.w||0,d=info.d||0,l=info.l||0;
-      var groupDone=played>=3,remaining=Math.max(0,3-played);
+      var played = info.played || 0;
+      var w = info.w||0, d = info.d||0, l = info.l||0;
+      var groupDone = played >= 3;
+      var remaining = Math.max(0, 3 - played);
       var jp=[];
-      if(!info.group){
-        jp.push('グループステージのデータを取得中。');
-      } else if(played===0){
+
+      if(!info.group) {
+        // 実試合データなし（未消化または未取得）
+        jp.push('グループステージはまだ未消化。試合が行われれば自動更新される。');
+      } else if(played === 0) {
         jp.push('グループステージはまだ未開始。');
-      }else{
-        var record=w+'勝'+d+'分'+l+'敗';
+      } else {
+        // 基本成績
+        var record = w+'勝'+d+'分'+l+'敗';
         jp.push('グループ'+info.group+'で'+played+'試合を消化。'+record+'で'+info.pts+'pt、現在'+info.rank+'位。');
-        if(info.gf>=2*played)        jp.push('1試合平均'+Math.round(info.gf*10/played)/10+'得点と攻撃は好調。');
-        else if(info.gf===0&&played>=2) jp.push('得点が奪えておらず攻撃面に深刻な課題。');
-        else if(info.gf<=played-1)   jp.push('得点力はやや物足りない印象。');
-        if(info.ga===0&&played>=2)   jp.push('無失点と堅守を継続中。');
-        else if(info.ga>=played*2)   jp.push('1試合'+Math.round(info.ga*10/played)/10+'失点と守備の安定が急務。');
-        else if(info.ga>played)      jp.push('失点がやや多く守備面の課題が残る。');
+        // 攻撃面
+        if(info.gf >= 2*played)      jp.push('1試合平均'+Math.round(info.gf*10/played)/10+'得点と攻撃は好調。');
+        else if(info.gf === 0 && played >= 2) jp.push('得点が奪えておらず攻撃面に深刻な課題。');
+        else if(info.gf <= played-1) jp.push('得点力はやや物足りない印象。');
+        // 守備面
+        if(info.ga === 0 && played >= 2) jp.push('無失点と堅守を継続中。');
+        else if(info.ga >= played*2)     jp.push('1試合'+Math.round(info.ga*10/played)/10+'失点と守備の安定が急務。');
+        else if(info.ga > played)        jp.push('失点がやや多く守備面の課題が残る。');
+        // 総合評価
         if(info.gd>=5)       jp.push('得失点差'+gdStr+'と圧倒的な強さを示している。');
         else if(info.gd>=2)  jp.push('得失点差'+gdStr+'と内容・結果ともに安定。');
         else if(info.gd===0) jp.push('得失点差±0とギリギリの戦いが続いている。');
         else if(info.gd<0)   jp.push('得失点差'+gdStr+'とやや苦しい戦況。');
+        // ノックアウト実績
         if(bs.length) jp.push(bs.join('・')+'を撃破しここまで勝ち上がってきた。');
       }
-      var jitsujoCm=jp.join('');
+      var jitsujoCm = jp.join('');
+
       // ── 展望（実績を踏まえた今後の考察） ──
       var tp=[];
-      if(!groupDone){
-        tp.push('残り'+remaining+'試合。');
-        if(info.rank===1&&info.pts>=4)      tp.push('現在首位で突破圏内。勝ち点を積み上げてグループ1位通過を目指す展開。');
-        else if(info.rank<=2&&info.pts>=3)  tp.push('2位以内の突破圏内だが追い上げるチームもおり、次戦が重要。');
-        else if(info.rank===3&&info.pts>=1) tp.push('現在3位で自力突破には勝利が必要。他グループの3位成績との兼ね合いも重要。');
-        else                                tp.push('厳しい状況だが、残り試合で上位を食えば逆転の目もある。');
-        if(r===0)     tp.push('シミュレーション上では最終的な優勝候補筆頭。グループを抜ければ本命として警戒される。');
-        else if(r===1)tp.push('シミュレーションでは決勝まで勝ち上がる力と評価。突破後の上位進出の可能性大。');
-        else if(r<=3) tp.push('シミュレーションではベスト4レベルと評価。突破後のノックアウトでも存在感を見せるはず。');
-        else          tp.push('シミュレーション上はここで終戦の予測だが、現状次第では番狂わせの可能性も。');
-      }else{
-        var passedAs=info.rank===1?'グループ1位':info.rank===2?'グループ2位':'3位';
+      if(!groupDone) {
+        // グループ消化中（または未消化）
+        if(!info.group) {
+          // 試合未消化チーム：シミュレーション予測のみ
+          tp.push('グループステージはこれから。');
+        } else {
+          tp.push('残り'+remaining+'試合。');
+          if(info.rank===1 && info.pts>=4)
+            tp.push('現在首位で突破圏内にあり、勝ち点を積み上げてグループ1位通過を目指す展開。');
+          else if(info.rank<=2 && info.pts>=3)
+            tp.push('2位以内の突破圏内だが、追い上げるチームもおり油断は禁物。次戦の結果が重要。');
+          else if(info.rank===3 && info.pts>=1)
+            tp.push('現在3位で自力突破には勝利が必要。他グループの3位成績との比較も重要になる。');
+          else
+            tp.push('厳しい状況だが、残り試合で上位を食えば逆転の目もある。');
+        }
+        // シミュレーションの予測を参考として添える
+        if(r===0)     tp.push('シミュレーション上では最終的な優勝候補筆頭。強度スコアも高く、グループを抜ければ本命として警戒される存在。');
+        else if(r===1)tp.push('シミュレーションでは決勝まで勝ち上がる力があると評価。グループを突破すれば上位進出の可能性大。');
+        else if(r<=3) tp.push('シミュレーションではベスト4レベルの実力を持つと評価されており、突破後のノックアウトステージでも存在感を見せるはず。');
+        else          tp.push('シミュレーション上はここで終戦の予測だが、現状の実績次第では上位を食う可能性を秘めている。');
+      } else {
+        // グループ突破済み・ノックアウトへ
+        var passedAs = info.rank===1?'グループ1位':info.rank===2?'グループ2位':'3位';
         tp.push(passedAs+'でノックアウトステージへ。');
-        if(r===0)     tp.push('攻守のバランス・強度スコアともにトップクラス。頂点まで駆け上がる力を持つ本命。');
-        else if(r===1)tp.push('決勝まで勝ち上がる力は十分。最後の壁をどう越えるかが鍵。');
-        else if(r<=3) tp.push('ベスト4入りが期待される実力。強豪との対戦が続くがここまでの実績は自信になるはず。');
+        if(r===0)     tp.push('攻守のバランス・強度スコアともに全チームトップクラス。このまま頂点まで駆け上がる力を持つ本命。');
+        else if(r===1)tp.push('決勝まで勝ち上がる力は十分。ただし最後の壁をどう越えるかが鍵。');
+        else if(r<=3) tp.push('ベスト4入りが期待される実力を持つ。強豪との対戦が続くが、ここまでの実績は自信になるはず。');
         else          tp.push('ベスト8が現実的な到達点。強豪と当たる前に足元を固めたい。');
-        if(bs.length) tp.push('ノックアウトでの勝利も積み上げており、勝負強さも示している。');
+        if(bs.length) tp.push('ノックアウトでの対戦相手を着実に撃破しており、勝負強さも示している。');
       }
-      var tenboCm=tp.join('');
+      var tenboCm = tp.join('');
+
       qfHtml+='<div style="padding:10px 12px;background:'+badge.bg+';border-radius:6px;'
         +'border:1px solid '+badge.border+';box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
         +'<div style="font-size:0.6rem;font-weight:700;color:'+badge.border+';margin-bottom:2px;">'+badge.icon+' '+badge.label+'</div>'
         +'<div style="font-size:0.78rem;font-weight:700;color:#111;margin-bottom:3px;">'+team+'</div>'
-        +'<div style="font-size:0.62rem;color:#666;margin-bottom:6px;">グループ'+(info.group||'?')+' &nbsp;｜&nbsp; 勝ち点'+(info.pts||0)+' &nbsp;得失点差'+gdStr+'</div>'
+        +'<div style="font-size:0.62rem;color:#666;margin-bottom:6px;">グループ'+(info.group||'ー')+' &nbsp;｜&nbsp; 勝ち点'+(info.pts||0)+(gdStr?' &nbsp;得失点差'+gdStr:'')+'</div>'
         +'<div style="font-size:0.6rem;font-weight:700;color:#555;margin-bottom:2px;border-top:1px solid rgba(0,0,0,0.06);padding-top:5px;">📊 ここまでの実情</div>'
         +'<div style="font-size:0.68rem;color:#333;margin-bottom:6px;line-height:1.5;">'+jitsujoCm+'</div>'
         +'<div style="font-size:0.6rem;font-weight:700;color:#555;margin-bottom:2px;">🔮 展望</div>'
@@ -2256,6 +2302,7 @@ function renderBracketPrediction(bracketJson, groupSimJson) {
     out+=qfHtml;
   })();
 
+  // 優勝国予想セクションをシミュレーション結果で更新
   var winnerEl = document.getElementById('ai-winner-text');
   if (winnerEl && fw) {
     winnerEl.innerHTML =
