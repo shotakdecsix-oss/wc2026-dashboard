@@ -2194,21 +2194,8 @@ function renderBracketPrediction(bracketJson, groupSimJson) {
       groupTeams[g].forEach(function(team,i){tInfo[team].rank=i+1;});
     });
 
-    // ノックアウト撃破実績：実試合のみ（シミュレーション含むr32vis等は使わない）
-    // data.r32/r16/qf にシミュレーション結果が混入するケースがあるため
-    // グループ全体が終わっていない間はノックアウト実績は表示しない
-    var allGroupsDone = Object.keys(tInfo).length >= 32; // 32チーム以上登録 = 全グループ完了目安
+    // ノックアウト撃破実績はシミュレーション結果と区別できないため表示しない
     var beaten={};
-    if(allGroupsDone){
-      [data.r32,data.r16,data.qf].forEach(function(arr){
-        if(!arr||!arr.length)return;
-        arr.forEach(function(m){
-          if(!m.winner||!m.home||!m.away)return;
-          var loser=m.winner===m.home?m.away:m.home;
-          if(loser){if(!beaten[m.winner])beaten[m.winner]=[];beaten[m.winner].push(loser);}
-        });
-      });
-    }
 
     var qfHtml='<div style="margin-top:18px;">'
       +'<div style="font-size:0.8rem;font-weight:700;color:#111;margin-bottom:10px;'
